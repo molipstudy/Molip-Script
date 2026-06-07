@@ -1,13 +1,132 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from './supabase'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { User } from '@supabase/supabase-js'
+import { supabase, supabaseSchema } from './supabase'
 import './App.css'
 
-type Screen = 'home' | 'create' | 'script' | 'study' | 'quiz'
+type Screen =
+  | 'home'
+  | 'editor'
+  | 'script'
+  | 'study-select'
+  | 'flashcard'
+  | 'dictation'
+  | 'auth'
 
 type QuizItem = {
   number: string
   meaning: string
   english: string
+}
+
+type ScriptRecord = {
+  id: string
+  title: string
+  rawText: string
+  createdAt: string
+  updatedAt: string
+  lastOpenedAt: string
+}
+
+type SentenceStat = {
+  sentenceKey: string
+  number: string
+  meaning: string
+  english: string
+  flashcardUnknownCount: number
+  dictationAttempts: number
+  dictationWrongCount: number
+  lastStudiedAt?: string
+  lastDictationAt?: string
+}
+
+type WordStat = {
+  word: string
+  source: 'dictation' | 'flashcard'
+  wrongCount: number
+  lastWrongAt?: string
+}
+
+type DictationSessionRecord = {
+  id: string
+  scriptId: string
+  mode: string
+  createdAt: string
+  totalQuestions: number
+  correctQuestions: number
+  wrongQuestions: number
+  wrongWords: string[]
+}
+
+type ActiveQuizRecord = {
+  id: string
+  scriptId: string
+  quizType: 'dictation'
+  mode: 'standard' | 'weak'
+  state: ActiveDictationState
+  updatedAt: string
+}
+
+type RouteTarget = {
+  scriptId: string | null
+  screen: Screen
+}
+
+type LearningStore = {
+  scripts: ScriptRecord[]
+  sentenceStatsByScript: Record<string, Record<string, SentenceStat>>
+  wordStatsByScript: Record<string, WordStat[]>
+  dictationSessions: DictationSessionRecord[]
+  activeQuizzes: ActiveQuizRecord[]
+}
+
+type ScriptRow = {
+  id: string
+  title: string
+  raw_text: string
+  created_at: string
+  updated_at: string
+  last_opened_at: string
+}
+
+type SentenceStatRow = {
+  script_id: string
+  sentence_key: string
+  number: string
+  meaning: string
+  english: string
+  flashcard_unknown_count: number
+  dictation_attempts: number
+  dictation_wrong_count: number
+  last_studied_at: string | null
+  last_dictation_at: string | null
+}
+
+type WordStatRow = {
+  script_id: string
+  word: string
+  source: 'dictation' | 'flashcard'
+  wrong_count: number
+  last_wrong_at: string | null
+}
+
+type DictationSessionRow = {
+  id: string
+  script_id: string
+  mode: string
+  created_at: string
+  total_questions: number
+  correct_questions: number
+  wrong_questions: number
+  wrong_words: string[]
+}
+
+type ActiveQuizRow = {
+  id: string
+  script_id: string
+  quiz_type: 'dictation'
+  mode: 'standard' | 'weak'
+  state: ActiveDictationState
+  updated_at: string
 }
 
 type TextUnit = {
@@ -26,103 +145,25 @@ type BlankUnit = {
 
 type SentenceUnit = TextUnit | BlankUnit
 
-type QuizQuestion = {
-  number: string
-  meaning: string
+type DictationQuestion = {
+  item: QuizItem
   sourceIndex: number
+  sentenceKey: string
   units: SentenceUnit[]
 }
 
-type QuestionGrade = {
+type DictationGrade = {
   total: number
   correct: number
   checkedById: Record<string, boolean>
+  wrongWords: string[]
 }
 
-type StudyAnswerHistory = {
-  queue: number[]
-  unknownQueue: number[]
-  index: number
-  score: number
-  answeredCount: number
-  done: boolean
-  revealed: boolean
-}
-
-type ScriptRecord = {
-  id: string
-  title: string
-  rawText: string
-  createdAt: string
-  updatedAt: string
-  lastOpenedAt: string
-}
-
-type QuizSessionRecord = {
-  id: string
-  scriptId: string
-  createdAt: string
-  totalQuestions: number
-  totalBlanks: number
-  correctBlanks: number
-  wrongSentences: number
-  blankRatio: number
-}
-
-type SentenceStat = {
-  sentenceKey: string
-  number: string
-  meaning: string
-  english: string
-  studyRevealCount: number
-  quizAttempts: number
-  wrongCount: number
-  wrongBlankCount: number
-  lastStudiedAt?: string
-  lastQuizAt?: string
-}
-
-type LearningStore = {
-  scripts: ScriptRecord[]
-  quizSessions: QuizSessionRecord[]
-  sentenceStatsByScript: Record<string, Record<string, SentenceStat>>
-}
-
-type ScriptRow = {
-  id: string
-  owner_username: string
-  title: string
-  raw_text: string
-  created_at: string
-  updated_at: string
-  last_opened_at: string
-}
-
-type QuizSessionRow = {
-  id: string
-  owner_username: string
-  script_id: string
-  created_at: string
-  total_questions: number
-  total_blanks: number
-  correct_blanks: number
-  wrong_sentences: number
-  blank_ratio: number
-}
-
-type SentenceStatRow = {
-  owner_username: string
-  script_id: string
-  sentence_key: string
-  number: string
-  meaning: string
-  english: string
-  study_reveal_count: number
-  quiz_attempts: number
-  wrong_count: number
-  wrong_blank_count: number
-  last_studied_at: string | null
-  last_quiz_at: string | null
+type ActiveDictationState = {
+  questions: DictationQuestion[]
+  answersById: Record<string, string>
+  gradesByIndex: Record<string, DictationGrade>
+  currentIndex: number
 }
 
 const STOP_WORDS = new Set([
@@ -175,9 +216,29 @@ const STOP_WORDS = new Set([
   'day',
 ])
 
-const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+const BRAND_LINKS = [
+  {
+    label: '몰입 스터디',
+    href: import.meta.env.VITE_MOLIP_STUDY_URL ?? 'https://molipstudy.com',
+  },
+  {
+    label: '몰입 보카',
+    href: import.meta.env.VITE_MOLIP_VOCA_URL ?? 'https://molipvoca.com',
+  },
+]
+
+const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
 const nowIso = () => new Date().toISOString()
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const normalizeLoginId = (value: string) => value.trim().toLowerCase()
+
+const isValidLoginId = (value: string) => /^[a-z0-9][a-z0-9._-]{2,31}$/.test(value)
+
+const displayLoginId = (user: User) => {
+  const metadataId = user.user_metadata?.login_id
+  if (typeof metadataId === 'string' && metadataId) return metadataId
+  return user.email ?? '사용자'
+}
 
 const formatDateTime = (value: string) =>
   new Intl.DateTimeFormat('ko-KR', {
@@ -187,40 +248,64 @@ const formatDateTime = (value: string) =>
     minute: '2-digit',
   }).format(new Date(value))
 
-const toFriendlyDbError = (message: string) => {
-  const lowered = message.toLowerCase()
-  if (lowered.includes('invalid schema')) {
-    return 'Supabase API 설정에서 Exposed schemas에 `molip_english_blank`를 추가해 주세요.'
-  }
-  if (lowered.includes('relation') && lowered.includes('does not exist')) {
-    return '`supabase.sql`을 다시 실행해 테이블을 생성해 주세요.'
-  }
-  if (
-    lowered.includes('permission denied') ||
-    lowered.includes('violates row-level security policy')
-  ) {
-    return '권한 설정 문제입니다. 스키마/테이블 grant 또는 RLS 설정을 확인해 주세요.'
-  }
-  return message
-}
-
-const normalizeCoreLower = (value: string) =>
+const normalizeWord = (value: string) =>
   value
     .toLowerCase()
     .replace(/^[^a-z0-9']+|[^a-z0-9']+$/g, '')
     .trim()
 
-const normalizeCoreCaseSensitive = (value: string) =>
+const normalizeAnswer = (value: string) =>
   value.replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, '').trim()
 
 const parseTokenParts = (token: string) => {
   const match = token.match(/^([^A-Za-z0-9']*)([A-Za-z0-9']+)([^A-Za-z0-9']*)$/)
-  if (!match) {
-    return { prefix: '', core: '', suffix: '' }
-  }
+  if (!match) return { prefix: '', core: '', suffix: '' }
   const [, prefix, core, suffix] = match
   return { prefix, core, suffix }
 }
+
+const renderHighlightedSentence = (english: string, weakWords: Set<string>) =>
+  english.split(/(\s+)/).map((token, index) => {
+    if (/^\s+$/.test(token)) return token
+    const { prefix, core, suffix } = parseTokenParts(token)
+    if (!core || !weakWords.has(normalizeWord(core))) return token
+    return (
+      <span className="weak-word" key={`${token}-${index}`}>
+        {prefix}
+        {core}
+        {suffix}
+      </span>
+    )
+  })
+
+const parseAppPath = (pathname: string): RouteTarget => {
+  const [scriptId = '', mode = ''] = pathname.split('/').filter(Boolean).map(decodeURIComponent)
+  if (!scriptId) return { scriptId: null, screen: 'home' }
+  if (mode === 'flashcard') return { scriptId, screen: 'flashcard' }
+  if (mode === 'dictation') return { scriptId, screen: 'dictation' }
+  if (mode === 'study') return { scriptId, screen: 'study-select' }
+  return { scriptId, screen: 'script' }
+}
+
+const pathForScreen = (screen: Screen, scriptId: string | null) => {
+  if (!scriptId) return '/'
+  const encodedId = encodeURIComponent(scriptId)
+  if (screen === 'flashcard') return `/${encodedId}/flashcard`
+  if (screen === 'dictation') return `/${encodedId}/dictation`
+  if (screen === 'study-select') return `/${encodedId}/study`
+  if (screen === 'script') return `/${encodedId}`
+  return '/'
+}
+
+const extractWords = (english: string) =>
+  Array.from(
+    new Set(
+      english
+        .split(/\s+/)
+        .map(normalizeWord)
+        .filter((word) => word.length > 1 && !STOP_WORDS.has(word)),
+    ),
+  )
 
 const parseItems = (rawText: string): QuizItem[] => {
   const lines = rawText
@@ -229,164 +314,185 @@ const parseItems = (rawText: string): QuizItem[] => {
     .map((line) => line.trim())
     .filter((line) => line && !/^\[[^\]]*]$/.test(line))
 
-  if (!lines.length) return []
-
   const items: QuizItem[] = []
   for (let i = 0; i < lines.length; i += 1) {
     const numberMatch = lines[i].match(/^(\d+)\.\s*(.+)$/)
     if (!numberMatch) continue
-
-    const [, number, meaning] = numberMatch
     const nextLine = lines[i + 1] ?? ''
-    if (!nextLine || /^\d+\.\s+/.test(nextLine) || /^\[[^\]]*]$/.test(nextLine)) {
-      continue
-    }
-
-    items.push({
-      number,
-      meaning: meaning.trim(),
-      english: nextLine.trim(),
-    })
+    if (!nextLine || /^\d+\.\s+/.test(nextLine)) continue
+    items.push({ number: numberMatch[1], meaning: numberMatch[2].trim(), english: nextLine.trim() })
     i += 1
   }
-
   return items
 }
 
-const pickRandomIndices = (pool: number[], count: number) => {
-  const shuffled = [...pool]
-  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+const sentenceKeyOf = (item: QuizItem, index: number) =>
+  `${index}:${item.number}:${item.english.toLowerCase().replace(/\s+/g, ' ').trim()}`
+
+const pickRandom = (pool: number[], count: number) => {
+  const next = [...pool]
+  for (let i = next.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    ;[next[i], next[j]] = [next[j], next[i]]
   }
-  return shuffled.slice(0, count)
+  return next.slice(0, count)
 }
 
-const makeQuestion = (item: QuizItem, sourceIndex: number, blankRatio: number): QuizQuestion => {
+const makeDictationQuestion = (
+  item: QuizItem,
+  sourceIndex: number,
+  weakWords: Set<string>,
+): DictationQuestion => {
   const tokens = item.english.split(/\s+/).filter(Boolean)
-  const candidates = tokens
-    .map((token, index) => ({ index, core: normalizeCoreLower(token) }))
-    .filter(({ core }) => core.length > 2 && !STOP_WORDS.has(core))
+  const candidateIndexes = tokens
+    .map((token, index) => ({ index, core: normalizeWord(token) }))
+    .filter(({ core }) => core.length > 1 && !STOP_WORDS.has(core))
+  const weakIndexes = candidateIndexes
+    .filter(({ core }) => weakWords.has(core))
     .map(({ index }) => index)
+  const randomIndexes = candidateIndexes.map(({ index }) => index)
+  const targetCount = clamp(Math.ceil(tokens.length * 0.32), 1, Math.max(1, tokens.length))
+  const selected = new Set<number>(weakIndexes)
 
-  const fallback = tokens
-    .map((token, index) => ({ index, core: normalizeCoreLower(token) }))
-    .filter(({ core }) => core.length > 0)
-    .map(({ index }) => index)
-
-  const blankCount = clamp(Math.round(tokens.length * (blankRatio / 100)), 1, tokens.length)
-  const selected = new Set<number>()
-  pickRandomIndices(candidates, blankCount).forEach((index) => selected.add(index))
-
-  if (selected.size < blankCount) {
-    const needed = blankCount - selected.size
-    const rest = fallback.filter((index) => !selected.has(index))
-    pickRandomIndices(rest, needed).forEach((index) => selected.add(index))
+  if (selected.size < targetCount) {
+    pickRandom(
+      randomIndexes.filter((index) => !selected.has(index)),
+      targetCount - selected.size,
+    ).forEach((index) => selected.add(index))
   }
 
   const units: SentenceUnit[] = tokens.map((token, index) => {
-    if (!selected.has(index)) {
-      return { kind: 'text', token }
-    }
-
+    if (!selected.has(index)) return { kind: 'text', token }
     const { prefix, core, suffix } = parseTokenParts(token)
-    if (!core) {
-      return { kind: 'text', token }
-    }
-
+    if (!core) return { kind: 'text', token }
     return {
       kind: 'blank',
       blankId: `${item.number}-${index}-${Math.random().toString(36).slice(2, 8)}`,
       prefix,
       suffix,
       answer: core,
-      width: Math.max(88, Math.min(220, core.length * 16)),
+      width: Math.max(96, Math.min(340, core.length * 24 + 28)),
     }
   })
 
-  return {
-    number: item.number,
-    meaning: item.meaning,
-    sourceIndex,
-    units,
-  }
+  return { item, sourceIndex, sentenceKey: sentenceKeyOf(item, sourceIndex), units }
 }
 
-const makeExam = (items: QuizItem[], blankRatio: number) =>
-  items.map((item, index) => makeQuestion(item, index, blankRatio))
+const collectBlanks = (question: DictationQuestion) =>
+  question.units.filter((unit): unit is BlankUnit => unit.kind === 'blank')
 
-const collectBlankUnits = (questions: QuizQuestion[]) =>
-  questions.flatMap((question) =>
-    question.units
-      .filter((unit): unit is BlankUnit => unit.kind === 'blank')
-      .map((unit) => ({ questionNumber: question.number, ...unit })),
-  )
-
-const createEmptyAnswers = (questions: QuizQuestion[]) => {
-  const next: Record<string, string> = {}
-  collectBlankUnits(questions).forEach((blank) => {
-    next[blank.blankId] = ''
-  })
-  return next
-}
-
-const gradeQuestion = (question: QuizQuestion, answersById: Record<string, string>): QuestionGrade => {
-  const blanks = collectBlankUnits([question])
-  let total = 0
-  let correct = 0
-  const checkedById: Record<string, boolean> = {}
-
-  blanks.forEach((blank) => {
-    const user = normalizeCoreCaseSensitive(answersById[blank.blankId] ?? '')
-    const expected = normalizeCoreCaseSensitive(blank.answer)
-    const isCorrect = user !== '' && user === expected
-    total += 1
-    if (isCorrect) correct += 1
-    checkedById[blank.blankId] = isCorrect
-  })
-
-  return { total, correct, checkedById }
-}
-
-const toAnswerSentence = (question: QuizQuestion) =>
+const questionSentence = (question: DictationQuestion) =>
   question.units
-    .map((unit) =>
-      unit.kind === 'text' ? unit.token : `${unit.prefix}${unit.answer}${unit.suffix}`,
-    )
+    .map((unit) => (unit.kind === 'text' ? unit.token : `${unit.prefix}${unit.answer}${unit.suffix}`))
     .join(' ')
 
-const createEmptyStore = (): LearningStore => ({
+const createAnswers = (questions: DictationQuestion[]) => {
+  const answers: Record<string, string> = {}
+  questions.forEach((question) => {
+    collectBlanks(question).forEach((blank) => {
+      answers[blank.blankId] = ''
+    })
+  })
+  return answers
+}
+
+const gradeQuestion = (
+  question: DictationQuestion,
+  answersById: Record<string, string>,
+): DictationGrade => {
+  const checkedById: Record<string, boolean> = {}
+  const wrongWords: string[] = []
+  let correct = 0
+  const blanks = collectBlanks(question)
+
+  blanks.forEach((blank) => {
+    const expected = normalizeAnswer(blank.answer)
+    const typed = normalizeAnswer(answersById[blank.blankId] ?? '')
+    const isCorrect = typed !== '' && typed === expected
+    checkedById[blank.blankId] = isCorrect
+    if (isCorrect) {
+      correct += 1
+    } else {
+      wrongWords.push(normalizeWord(blank.answer))
+    }
+  })
+
+  return { total: blanks.length, correct, checkedById, wrongWords }
+}
+
+const emptyStore = (): LearningStore => ({
   scripts: [],
-  quizSessions: [],
   sentenceStatsByScript: {},
+  wordStatsByScript: {},
+  dictationSessions: [],
+  activeQuizzes: [],
 })
 
-const normalizeStoreFromRows = (
-  scriptRows: ScriptRow[],
-  sessionRows: QuizSessionRow[],
-  statRows: SentenceStatRow[],
+const toFriendlyDbError = (message: string) => {
+  const lowered = message.toLowerCase()
+  if (lowered.includes('pgrst002') || lowered.includes('schema cache')) {
+    return 'Supabase Data API의 Exposed schemas에 삭제된 스키마가 남아 있습니다. `supabase.sql`을 실행한 뒤 Data API 설정에 현재 스키마가 포함되어 있는지 확인해 주세요.'
+  }
+  if (lowered.includes('invalid schema')) {
+    return `Supabase API 설정에서 Exposed schemas에 \`${supabaseSchema}\`를 추가해 주세요.`
+  }
+  if (lowered.includes('does not exist') || lowered.includes('relation')) {
+    return '`supabase.sql`을 Supabase SQL Editor에서 실행해 주세요.'
+  }
+  if (lowered.includes('row-level security') || lowered.includes('permission denied')) {
+    return 'RLS 또는 권한 정책을 확인해 주세요. 최신 `supabase.sql` 실행이 필요합니다.'
+  }
+  if (lowered.includes('email logins are disabled') || lowered.includes('email provider')) {
+    return 'Supabase Auth의 Email provider가 꺼져 있습니다. 이메일/비밀번호 로그인을 켜 주세요.'
+  }
+  if (lowered.includes('user already registered') || lowered.includes('user already exists')) {
+    return '이미 가입된 이메일입니다. 기존 비밀번호가 맞으면 입력한 아이디로 계정을 연결합니다.'
+  }
+  if (lowered.includes('profiles_login_id_format') || lowered.includes('duplicate key')) {
+    return '이미 사용 중인 아이디이거나 아이디 형식이 올바르지 않습니다.'
+  }
+  return message
+}
+
+const normalizeStore = (
+  scripts: ScriptRow[],
+  sentenceRows: SentenceStatRow[],
+  wordRows: WordStatRow[],
+  dictationRows: DictationSessionRow[],
+  activeQuizRows: ActiveQuizRow[],
 ): LearningStore => {
   const sentenceStatsByScript: Record<string, Record<string, SentenceStat>> = {}
+  const wordStatsByScript: Record<string, WordStat[]> = {}
 
-  statRows.forEach((row) => {
-    const scriptStats = sentenceStatsByScript[row.script_id] ?? {}
-    scriptStats[row.sentence_key] = {
+  sentenceRows.forEach((row) => {
+    const bucket = sentenceStatsByScript[row.script_id] ?? {}
+    bucket[row.sentence_key] = {
       sentenceKey: row.sentence_key,
       number: row.number,
       meaning: row.meaning,
       english: row.english,
-      studyRevealCount: row.study_reveal_count,
-      quizAttempts: row.quiz_attempts,
-      wrongCount: row.wrong_count,
-      wrongBlankCount: row.wrong_blank_count,
+      flashcardUnknownCount: row.flashcard_unknown_count,
+      dictationAttempts: row.dictation_attempts,
+      dictationWrongCount: row.dictation_wrong_count,
       lastStudiedAt: row.last_studied_at ?? undefined,
-      lastQuizAt: row.last_quiz_at ?? undefined,
+      lastDictationAt: row.last_dictation_at ?? undefined,
     }
-    sentenceStatsByScript[row.script_id] = scriptStats
+    sentenceStatsByScript[row.script_id] = bucket
+  })
+
+  wordRows.forEach((row) => {
+    const bucket = wordStatsByScript[row.script_id] ?? []
+    bucket.push({
+      word: row.word,
+      source: row.source,
+      wrongCount: row.wrong_count,
+      lastWrongAt: row.last_wrong_at ?? undefined,
+    })
+    wordStatsByScript[row.script_id] = bucket
   })
 
   return {
-    scripts: scriptRows.map((row) => ({
+    scripts: scripts.map((row) => ({
       id: row.id,
       title: row.title,
       rawText: row.raw_text,
@@ -394,150 +500,346 @@ const normalizeStoreFromRows = (
       updatedAt: row.updated_at,
       lastOpenedAt: row.last_opened_at,
     })),
-    quizSessions: sessionRows.map((row) => ({
+    sentenceStatsByScript,
+    wordStatsByScript,
+    dictationSessions: dictationRows.map((row) => ({
       id: row.id,
       scriptId: row.script_id,
+      mode: row.mode,
       createdAt: row.created_at,
       totalQuestions: row.total_questions,
-      totalBlanks: row.total_blanks,
-      correctBlanks: row.correct_blanks,
-      wrongSentences: row.wrong_sentences,
-      blankRatio: row.blank_ratio,
+      correctQuestions: row.correct_questions,
+      wrongQuestions: row.wrong_questions,
+      wrongWords: row.wrong_words ?? [],
     })),
-    sentenceStatsByScript,
+    activeQuizzes: activeQuizRows.map((row) => ({
+      id: row.id,
+      scriptId: row.script_id,
+      quizType: row.quiz_type,
+      mode: row.mode,
+      state: row.state,
+      updatedAt: row.updated_at,
+    })),
   }
 }
 
-const loadRemoteStore = async (username: string): Promise<LearningStore> => {
-  if (!supabase) throw new Error('Supabase가 설정되지 않았습니다.')
-
-  const [scriptsResult, sessionsResult, statsResult] = await Promise.all([
-    supabase
-      .from('scripts')
-      .select(
-        'id, owner_username, title, raw_text, created_at, updated_at, last_opened_at',
-      )
-      .eq('owner_username', username)
-      .order('updated_at', { ascending: false }),
-    supabase
-      .from('quiz_sessions')
-      .select(
-        'id, owner_username, script_id, created_at, total_questions, total_blanks, correct_blanks, wrong_sentences, blank_ratio',
-      )
-      .eq('owner_username', username)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('sentence_stats')
-      .select(
-        'owner_username, script_id, sentence_key, number, meaning, english, study_reveal_count, quiz_attempts, wrong_count, wrong_blank_count, last_studied_at, last_quiz_at',
-      )
-      .eq('owner_username', username),
-  ])
-
-  if (scriptsResult.error) throw scriptsResult.error
-  if (sessionsResult.error) throw sessionsResult.error
-  if (statsResult.error) throw statsResult.error
-
-  return normalizeStoreFromRows(
-    (scriptsResult.data ?? []) as ScriptRow[],
-    (sessionsResult.data ?? []) as QuizSessionRow[],
-    (statsResult.data ?? []) as SentenceStatRow[],
-  )
-}
-
-const sentenceKeyOf = (item: QuizItem, index: number) =>
-  `${index}:${item.number}:${item.english.toLowerCase().replace(/\s+/g, ' ').trim()}`
-
 function App() {
-  const [screen, setScreen] = useState<Screen>('home')
-  const [username, setUsername] = useState('')
-  const [usernameInput, setUsernameInput] = useState('')
-  const [syncError, setSyncError] = useState('')
+  const [screen, setScreen] = useState<Screen>('auth')
+  const [user, setUser] = useState<User | null>(null)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [loginId, setLoginId] = useState('')
+  const [signupEmail, setSignupEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
+  const [isAuthReady, setIsAuthReady] = useState(false)
+
+  const [store, setStore] = useState<LearningStore>(() => emptyStore())
   const [isLoadingStore, setIsLoadingStore] = useState(false)
+  const [hasLoadedStore, setHasLoadedStore] = useState(false)
+  const [syncError, setSyncError] = useState('')
 
-  const [store, setStore] = useState<LearningStore>(() => createEmptyStore())
   const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null)
-  const [blankRatio, setBlankRatio] = useState(35)
-
+  const [editingScriptId, setEditingScriptId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftRawText, setDraftRawText] = useState('')
   const [draftError, setDraftError] = useState('')
-  const [editingScriptId, setEditingScriptId] = useState<string | null>(null)
 
-  const [studyIndex, setStudyIndex] = useState(0)
-  const [studyRevealed, setStudyRevealed] = useState(false)
-  const [studyQueue, setStudyQueue] = useState<number[]>([])
-  const [studyUnknownQueue, setStudyUnknownQueue] = useState<number[]>([])
-  const [studyScore, setStudyScore] = useState(0)
-  const [studyAnsweredCount, setStudyAnsweredCount] = useState(0)
-  const [studyDone, setStudyDone] = useState(false)
-  const [studyHistory, setStudyHistory] = useState<StudyAnswerHistory[]>([])
+  const [weakOnly, setWeakOnly] = useState(false)
+  const [trackFlashWords, setTrackFlashWords] = useState(true)
+  const [flashQueue, setFlashQueue] = useState<number[]>([])
+  const [flashIndex, setFlashIndex] = useState(0)
+  const [flashRevealed, setFlashRevealed] = useState(false)
+  const [flashUnknown, setFlashUnknown] = useState<number[]>([])
+  const [wordPickerOpen, setWordPickerOpen] = useState(false)
+  const [pendingFlashIndex, setPendingFlashIndex] = useState<number | null>(null)
+  const [selectedWords, setSelectedWords] = useState<Set<string>>(() => new Set())
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
 
-  const [quizScriptId, setQuizScriptId] = useState<string | null>(null)
-  const [quizItems, setQuizItems] = useState<QuizItem[]>([])
-  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
+  const [dictationQuestions, setDictationQuestions] = useState<DictationQuestion[]>([])
   const [answersById, setAnswersById] = useState<Record<string, string>>({})
-  const [gradesByIndex, setGradesByIndex] = useState<Record<number, QuestionGrade>>({})
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [focusSignal, setFocusSignal] = useState(0)
-  const [quizBlankRatio, setQuizBlankRatio] = useState(35)
-  const [quizError, setQuizError] = useState('')
-
-  const blankInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
-  const sessionSavedRef = useRef(false)
+  const [gradesByIndex, setGradesByIndex] = useState<Record<number, DictationGrade>>({})
+  const [dictationIndex, setDictationIndex] = useState(0)
+  const [dictationMode, setDictationMode] = useState<'standard' | 'weak'>('standard')
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const hasAppliedInitialRoute = useRef(false)
 
   const selectedScript = store.scripts.find((script) => script.id === selectedScriptId) ?? null
-  const selectedItems = selectedScript ? parseItems(selectedScript.rawText) : []
-  const scriptStatsMap = selectedScript
-    ? (store.sentenceStatsByScript[selectedScript.id] ?? {})
-    : {}
-  const scriptStats = Object.values(scriptStatsMap)
-  const recentSessions = selectedScript
-    ? store.quizSessions
-        .filter((session) => session.scriptId === selectedScript.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, 6)
-    : []
+  const selectedItems = useMemo(
+    () => (selectedScript ? parseItems(selectedScript.rawText) : []),
+    [selectedScript],
+  )
+  const selectedStats = selectedScript ? store.sentenceStatsByScript[selectedScript.id] ?? {} : {}
+  const selectedWordStats = selectedScript ? store.wordStatsByScript[selectedScript.id] ?? [] : []
+  const selectedActiveQuiz = selectedScript
+    ? (store.activeQuizzes.find((quiz) => quiz.scriptId === selectedScript.id && quiz.quizType === 'dictation') ??
+      null)
+    : null
+  const sortedScripts = useMemo(
+    () => [...store.scripts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [store.scripts],
+  )
+  const currentQuestion = dictationQuestions[dictationIndex] ?? null
+  const currentGrade = gradesByIndex[dictationIndex]
+  const isDictationDone =
+    dictationQuestions.length > 0 && dictationIndex >= dictationQuestions.length
+  const solvedCount = Object.keys(gradesByIndex).length
+  const correctCount = Object.values(gradesByIndex).filter((grade) => grade.correct === grade.total).length
+  const wrongCount = Object.values(gradesByIndex).filter((grade) => grade.correct < grade.total).length
 
-  const totalBlanks = collectBlankUnits(quizQuestions).length
-  const isQuizFinished = screen === 'quiz' && currentIndex >= quizQuestions.length
-  const currentQuestion = quizQuestions[currentIndex] ?? null
-  const currentBlanks = currentQuestion ? collectBlankUnits([currentQuestion]) : []
-  const currentGrade = gradesByIndex[currentIndex]
-  const firstBlankId = currentBlanks[0]?.blankId ?? ''
-
-  const hydrateStoreForUsername = useCallback(async (targetUsername: string) => {
+  const loadStore = useCallback(async () => {
+    if (!supabase || !user) return
     setIsLoadingStore(true)
+    setHasLoadedStore(false)
     try {
-      const nextStore = await loadRemoteStore(targetUsername)
-      setStore(nextStore)
-      setSyncError('')
-      setSelectedScriptId((prev) =>
-        prev && !nextStore.scripts.some((script) => script.id === prev) ? null : prev,
+      const scriptsResult = await supabase
+        .from('scripts')
+        .select('id,title,raw_text,created_at,updated_at,last_opened_at')
+        .order('updated_at', { ascending: false })
+      if (scriptsResult.error) throw scriptsResult.error
+
+      const sentenceResult = await supabase
+        .from('sentence_stats')
+        .select(
+          'script_id,sentence_key,number,meaning,english,flashcard_unknown_count,dictation_attempts,dictation_wrong_count,last_studied_at,last_dictation_at',
+        )
+      if (sentenceResult.error) throw sentenceResult.error
+
+      const wordResult = await supabase
+        .from('word_stats')
+        .select('script_id,word,source,wrong_count,last_wrong_at')
+        .order('wrong_count', { ascending: false })
+      if (wordResult.error) throw wordResult.error
+
+      const dictationResult = await supabase
+        .from('dictation_sessions')
+        .select(
+          'id,script_id,mode,created_at,total_questions,correct_questions,wrong_questions,wrong_words',
+        )
+        .order('created_at', { ascending: false })
+      if (dictationResult.error) throw dictationResult.error
+
+      const activeQuizResult = await supabase
+        .from('active_quizzes')
+        .select('id,script_id,quiz_type,mode,state,updated_at')
+        .order('updated_at', { ascending: false })
+      if (activeQuizResult.error) throw activeQuizResult.error
+
+      setStore(
+        normalizeStore(
+          (scriptsResult.data ?? []) as ScriptRow[],
+          (sentenceResult.data ?? []) as SentenceStatRow[],
+          (wordResult.data ?? []) as WordStatRow[],
+          (dictationResult.data ?? []) as DictationSessionRow[],
+          (activeQuizResult.data ?? []) as ActiveQuizRow[],
+        ),
       )
+      setSyncError('')
     } catch (error) {
-      setStore(createEmptyStore())
       const message = error instanceof Error ? error.message : '알 수 없는 오류'
       setSyncError(`데이터 불러오기 실패: ${toFriendlyDbError(message)}`)
     } finally {
       setIsLoadingStore(false)
+      setHasLoadedStore(true)
     }
+  }, [user])
+
+  useEffect(() => {
+    if (!supabase) return
+    void supabase.auth.getSession().then(({ data }) => {
+      const nextUser = data.session?.user ?? null
+      setUser(nextUser)
+      setScreen(nextUser ? 'home' : 'auth')
+      setIsAuthReady(true)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUser = session?.user ?? null
+      setUser(nextUser)
+      setStore(emptyStore())
+      setHasLoadedStore(false)
+      hasAppliedInitialRoute.current = false
+      setSelectedScriptId(null)
+      setScreen(nextUser ? 'home' : 'auth')
+    })
+
+    return () => data.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
-    if (!username) return
-    void hydrateStoreForUsername(username)
-  }, [username, hydrateStoreForUsername])
+    if (!user) return
+    void loadStore()
+  }, [user, loadStore])
 
   useEffect(() => {
-    if (screen !== 'quiz' || isQuizFinished) return
-    const rafId = window.requestAnimationFrame(() => {
-      const firstInput = blankInputRefs.current[firstBlankId]
-      firstInput?.focus()
-      firstInput?.select()
+    if (!user || !hasLoadedStore || isLoadingStore || hasAppliedInitialRoute.current) return
+    const target = parseAppPath(window.location.pathname)
+    hasAppliedInitialRoute.current = true
+    if (!target.scriptId) return
+    if (!store.scripts.some((script) => script.id === target.scriptId)) return
+    setSelectedScriptId(target.scriptId)
+    setScreen(target.screen)
+  }, [hasLoadedStore, isLoadingStore, store.scripts, user])
+
+  useEffect(() => {
+    if (!user || screen === 'auth' || screen === 'editor') return
+    if (!hasAppliedInitialRoute.current) return
+    const nextPath = pathForScreen(screen, selectedScriptId)
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState(null, '', nextPath)
+    }
+  }, [screen, selectedScriptId, user])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const target = parseAppPath(window.location.pathname)
+      if (!target.scriptId) {
+        setSelectedScriptId(null)
+        setScreen('home')
+        return
+      }
+      setSelectedScriptId(target.scriptId)
+      setScreen(target.screen)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  useEffect(() => {
+    if (!currentQuestion || currentGrade || isDictationDone) return
+    const firstBlank = collectBlanks(currentQuestion)[0]
+    const raf = window.requestAnimationFrame(() => {
+      const input = firstBlank ? inputRefs.current[firstBlank.blankId] : null
+      input?.focus()
+      input?.select()
     })
-    return () => window.cancelAnimationFrame(rafId)
-  }, [screen, isQuizFinished, firstBlankId, focusSignal])
+    return () => window.cancelAnimationFrame(raf)
+  }, [currentQuestion, currentGrade, isDictationDone])
+
+  const requireUserId = () => {
+    if (!user) throw new Error('로그인이 필요합니다.')
+    return user.id
+  }
+
+  const handleAuth = async () => {
+    if (!supabase) return
+    const client = supabase
+    setAuthError('')
+    setAuthNotice('')
+    const normalizedLoginId = normalizeLoginId(loginId)
+    if (!normalizedLoginId || !password) {
+      setAuthError('아이디와 비밀번호를 입력해 주세요.')
+      return
+    }
+
+    const saveProfile = async (id: string, email: string) =>
+      client.from('profiles').upsert(
+        {
+          id,
+          login_id: normalizedLoginId,
+          email,
+          updated_at: nowIso(),
+        },
+        { onConflict: 'id' },
+      )
+
+    if (authMode === 'login') {
+      const { data: email, error: lookupError } = await client.rpc('email_for_login_id', {
+        input_login_id: normalizedLoginId,
+      })
+      if (lookupError) {
+        setAuthError(toFriendlyDbError(lookupError.message))
+        return
+      }
+      if (typeof email !== 'string' || !email) {
+        setAuthError('아이디 또는 비밀번호가 올바르지 않습니다.')
+        return
+      }
+      const result = await client.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (result.error) {
+        setAuthError(toFriendlyDbError(result.error.message))
+        return
+      }
+      setPassword('')
+      return
+    }
+
+    const email = signupEmail.trim().toLowerCase()
+    if (!email) {
+      setAuthError('이메일을 입력해 주세요.')
+      return
+    }
+    if (!isValidLoginId(normalizedLoginId)) {
+      setAuthError('아이디는 영문 소문자, 숫자, 점, 밑줄, 하이픈 3~32자로 입력해 주세요.')
+      return
+    }
+
+    const result = await client.auth.signUp({
+      email,
+      password,
+      options: { data: { login_id: normalizedLoginId } },
+    })
+    if (result.error) {
+      const loweredMessage = result.error.message.toLowerCase()
+      if (
+        loweredMessage.includes('user already registered') ||
+        loweredMessage.includes('user already exists')
+      ) {
+        const loginResult = await client.auth.signInWithPassword({ email, password })
+        if (loginResult.error || !loginResult.data.user) {
+          setAuthError('이미 가입된 이메일입니다. 기존 비밀번호를 확인해 주세요.')
+          return
+        }
+        const { error: profileError } = await saveProfile(loginResult.data.user.id, email)
+        if (profileError) {
+          setAuthError(toFriendlyDbError(profileError.message))
+          return
+        }
+        setAuthNotice('기존 계정을 입력한 아이디와 연결했습니다.')
+        setPassword('')
+        return
+      }
+      setAuthError(toFriendlyDbError(result.error.message))
+      return
+    }
+    const identities = result.data.user?.identities
+    const mayBeExistingUser = Array.isArray(identities) && identities.length === 0
+
+    if (mayBeExistingUser) {
+      const loginResult = await client.auth.signInWithPassword({ email, password })
+      if (loginResult.error || !loginResult.data.user) {
+        setAuthError('이미 가입된 이메일입니다. 기존 비밀번호를 확인해 주세요.')
+        return
+      }
+      const { error: profileError } = await saveProfile(loginResult.data.user.id, email)
+      if (profileError) {
+        setAuthError(toFriendlyDbError(profileError.message))
+        return
+      }
+      setAuthNotice('기존 계정을 입력한 아이디와 연결했습니다.')
+      setPassword('')
+      return
+    }
+
+    if (!result.data.session) {
+      setAuthNotice('가입 확인 이메일을 보냈습니다. 이메일 인증 후 아이디로 로그인해 주세요.')
+    } else if (result.data.user) {
+      const { error: profileError } = await saveProfile(result.data.user.id, email)
+      if (profileError) {
+        setAuthError(toFriendlyDbError(profileError.message))
+        return
+      }
+    }
+    setPassword('')
+  }
+
+  const signOut = async () => {
+    if (!supabase) return
+    await supabase.auth.signOut()
+  }
 
   const touchScript = (scriptId: string) => {
     const touchedAt = nowIso()
@@ -547,217 +849,14 @@ function App() {
         script.id === scriptId ? { ...script, lastOpenedAt: touchedAt } : script,
       ),
     }))
-
-    if (!supabase || !username) return
+    if (!supabase) return
     void supabase
       .from('scripts')
       .update({ last_opened_at: touchedAt })
       .eq('id', scriptId)
-      .eq('owner_username', username)
       .then(({ error }) => {
-        if (error) setSyncError(`지문 열람시간 저장 실패: ${toFriendlyDbError(error.message)}`)
+        if (error) setSyncError(`열람 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
       })
-  }
-
-  const upsertSentenceStat = (
-    scriptId: string,
-    item: QuizItem,
-    index: number,
-    updater: (stat: SentenceStat) => SentenceStat,
-  ) => {
-    const sentenceKey = sentenceKeyOf(item, index)
-    const currentBucket = store.sentenceStatsByScript[scriptId] ?? {}
-    const base: SentenceStat = currentBucket[sentenceKey] ?? {
-      sentenceKey,
-      number: item.number,
-      meaning: item.meaning,
-      english: item.english,
-      studyRevealCount: 0,
-      quizAttempts: 0,
-      wrongCount: 0,
-      wrongBlankCount: 0,
-    }
-    const nextStat = updater({
-      ...base,
-      number: item.number,
-      meaning: item.meaning,
-      english: item.english,
-    })
-
-    setStore((prev) => {
-      const scriptBucket = { ...(prev.sentenceStatsByScript[scriptId] ?? {}) }
-      scriptBucket[sentenceKey] = nextStat
-
-      return {
-        ...prev,
-        sentenceStatsByScript: {
-          ...prev.sentenceStatsByScript,
-          [scriptId]: scriptBucket,
-        },
-      }
-    })
-
-    if (!supabase || !username) return
-    void supabase.from('sentence_stats').upsert(
-      {
-        owner_username: username,
-        script_id: scriptId,
-        sentence_key: nextStat.sentenceKey,
-        number: nextStat.number,
-        meaning: nextStat.meaning,
-        english: nextStat.english,
-        study_reveal_count: nextStat.studyRevealCount,
-        quiz_attempts: nextStat.quizAttempts,
-        wrong_count: nextStat.wrongCount,
-        wrong_blank_count: nextStat.wrongBlankCount,
-        last_studied_at: nextStat.lastStudiedAt ?? null,
-        last_quiz_at: nextStat.lastQuizAt ?? null,
-        updated_at: nowIso(),
-      },
-      { onConflict: 'owner_username,script_id,sentence_key' },
-    )
-      .then(({ error }) => {
-        if (error) setSyncError(`문장 통계 저장 실패: ${toFriendlyDbError(error.message)}`)
-      })
-  }
-
-  const submitUsername = () => {
-    const nextName = usernameInput.trim()
-    if (!nextName) {
-      setSyncError('유저네임을 입력해 주세요.')
-      return
-    }
-    setUsername(nextName)
-    setUsernameInput('')
-    setSyncError('')
-    setScreen('home')
-    setSelectedScriptId(null)
-  }
-
-  const changeUsername = () => {
-    setUsername('')
-    setUsernameInput('')
-    setStore(createEmptyStore())
-    setSelectedScriptId(null)
-    setSyncError('')
-    setScreen('home')
-  }
-
-  const reloadStore = () => {
-    if (!username) return
-    void hydrateStoreForUsername(username)
-  }
-
-  const openCreate = () => {
-    setEditingScriptId(null)
-    setDraftTitle('')
-    setDraftRawText('')
-    setDraftError('')
-    setScreen('create')
-  }
-
-  const openEdit = (script: ScriptRecord) => {
-    setEditingScriptId(script.id)
-    setDraftTitle(script.title)
-    setDraftRawText(script.rawText)
-    setDraftError('')
-    setScreen('create')
-  }
-
-  const saveScript = async () => {
-    setSyncError('')
-    const title = draftTitle.trim()
-    const rawText = draftRawText.trim()
-    if (!title) {
-      setDraftError('제목을 입력해 주세요.')
-      return
-    }
-    if (!rawText) {
-      setDraftError('지문을 입력해 주세요.')
-      return
-    }
-    const parsed = parseItems(rawText)
-    if (!parsed.length) {
-      setDraftError('형식이 맞지 않습니다. `번호. 한글` 다음 줄에 `영어`를 넣어주세요.')
-      return
-    }
-
-    const timestamp = nowIso()
-    const targetId = editingScriptId ?? makeId()
-
-    if (!supabase || !username) {
-      setDraftError('Supabase 연결 또는 유저네임 상태를 확인해 주세요.')
-      return
-    }
-
-    if (editingScriptId) {
-      const { error } = await supabase
-        .from('scripts')
-        .update({
-          title,
-          raw_text: rawText,
-          updated_at: timestamp,
-          last_opened_at: timestamp,
-        })
-        .eq('id', editingScriptId)
-        .eq('owner_username', username)
-      if (error) {
-        setDraftError(`저장 실패: ${toFriendlyDbError(error.message)}`)
-        return
-      }
-    } else {
-      const { error } = await supabase.from('scripts').insert({
-        id: targetId,
-        owner_username: username,
-        title,
-        raw_text: rawText,
-        created_at: timestamp,
-        updated_at: timestamp,
-        last_opened_at: timestamp,
-      })
-      if (error) {
-        setDraftError(`저장 실패: ${toFriendlyDbError(error.message)}`)
-        return
-      }
-    }
-
-    setStore((prev) => {
-      if (editingScriptId) {
-        return {
-          ...prev,
-          scripts: prev.scripts.map((script) =>
-            script.id === editingScriptId
-              ? {
-                  ...script,
-                  title,
-                  rawText,
-                  updatedAt: timestamp,
-                  lastOpenedAt: timestamp,
-                }
-              : script,
-          ),
-        }
-      }
-
-      return {
-        ...prev,
-        scripts: [
-          {
-            id: targetId,
-            title,
-            rawText,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-            lastOpenedAt: timestamp,
-          },
-          ...prev.scripts,
-        ],
-      }
-    })
-
-    setSelectedScriptId(targetId)
-    setDraftError('')
-    setScreen('script')
   }
 
   const openScript = (scriptId: string) => {
@@ -766,1034 +865,1329 @@ function App() {
     setScreen('script')
   }
 
-  const deleteScript = async (scriptId: string) => {
-    setSyncError('')
-    const confirmed = window.confirm('이 지문과 기록을 삭제할까요?')
-    if (!confirmed) return
+  const openEditor = (script?: ScriptRecord) => {
+    setEditingScriptId(script?.id ?? null)
+    setDraftTitle(script?.title ?? '')
+    setDraftRawText(script?.rawText ?? '')
+    setDraftError('')
+    setScreen('editor')
+  }
 
-    if (!supabase || !username) {
-      setSyncError('Supabase 연결 또는 유저네임 상태를 확인해 주세요.')
+  const saveScript = async () => {
+    if (!supabase) return
+    const title = draftTitle.trim()
+    const rawText = draftRawText.trim()
+    if (!title) {
+      setDraftError('제목을 입력해 주세요.')
+      return
+    }
+    if (!parseItems(rawText).length) {
+      setDraftError('번호. 한글 뜻 다음 줄에 영어 문장을 넣어 주세요.')
       return
     }
 
-    const { error } = await supabase
-      .from('scripts')
-      .delete()
-      .eq('id', scriptId)
-      .eq('owner_username', username)
+    try {
+      const ownerId = requireUserId()
+      const timestamp = nowIso()
+      const scriptId = editingScriptId ?? makeId()
+      const payload = {
+        id: scriptId,
+        owner_id: ownerId,
+        title,
+        raw_text: rawText,
+        updated_at: timestamp,
+        last_opened_at: timestamp,
+      }
+      const { error } = editingScriptId
+        ? await supabase
+            .from('scripts')
+            .update({
+              title: payload.title,
+              raw_text: payload.raw_text,
+              updated_at: payload.updated_at,
+              last_opened_at: payload.last_opened_at,
+            })
+            .eq('id', editingScriptId)
+        : await supabase.from('scripts').insert({
+            ...payload,
+            created_at: timestamp,
+          })
+
+      if (error) throw error
+
+      setStore((prev) => ({
+        ...prev,
+        scripts: editingScriptId
+          ? prev.scripts.map((script) =>
+              script.id === editingScriptId
+                ? { ...script, title, rawText, updatedAt: timestamp, lastOpenedAt: timestamp }
+                : script,
+            )
+          : [
+              {
+                id: scriptId,
+                title,
+                rawText,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                lastOpenedAt: timestamp,
+              },
+              ...prev.scripts,
+            ],
+      }))
+      setSelectedScriptId(scriptId)
+      setScreen('script')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '알 수 없는 오류'
+      setDraftError(`저장 실패: ${toFriendlyDbError(message)}`)
+    }
+  }
+
+  const deleteScript = async (scriptId: string) => {
+    if (!supabase) return
+    if (!window.confirm('스크립트와 학습 기록을 삭제할까요?')) return
+    const { error } = await supabase.from('scripts').delete().eq('id', scriptId)
     if (error) {
       setSyncError(`삭제 실패: ${toFriendlyDbError(error.message)}`)
       return
     }
-
     setStore((prev) => {
-      const nextStats = { ...prev.sentenceStatsByScript }
-      delete nextStats[scriptId]
+      const sentenceStatsByScript = { ...prev.sentenceStatsByScript }
+      const wordStatsByScript = { ...prev.wordStatsByScript }
+      delete sentenceStatsByScript[scriptId]
+      delete wordStatsByScript[scriptId]
       return {
         ...prev,
         scripts: prev.scripts.filter((script) => script.id !== scriptId),
-        quizSessions: prev.quizSessions.filter((session) => session.scriptId !== scriptId),
-        sentenceStatsByScript: nextStats,
+        sentenceStatsByScript,
+        wordStatsByScript,
+        dictationSessions: prev.dictationSessions.filter((session) => session.scriptId !== scriptId),
       }
     })
-
     if (selectedScriptId === scriptId) {
       setSelectedScriptId(null)
       setScreen('home')
     }
   }
 
-  const startStudy = () => {
-    if (!selectedScript || !selectedItems.length) return
-    const initialQueue = selectedItems.map((_, index) => index)
-    touchScript(selectedScript.id)
-    setStudyQueue(initialQueue)
-    setStudyUnknownQueue([])
-    setStudyIndex(0)
-    setStudyScore(0)
-    setStudyAnsweredCount(0)
-    setStudyDone(false)
-    setStudyHistory([])
-    setStudyRevealed(false)
-    setScreen('study')
-  }
-
-  const toggleStudyReveal = () => {
-    if (!selectedScript) return
-    const sourceIndex = studyQueue[studyIndex]
-    const item = sourceIndex === undefined ? null : selectedItems[sourceIndex]
-    if (!item) return
-
-    if (!studyRevealed) {
-      upsertSentenceStat(selectedScript.id, item, sourceIndex, (stat) => ({
-        ...stat,
-        studyRevealCount: stat.studyRevealCount + 1,
-        lastStudiedAt: nowIso(),
-      }))
+  const upsertSentenceStat = async (
+    scriptId: string,
+    item: QuizItem,
+    index: number,
+    updater: (stat: SentenceStat) => SentenceStat,
+  ) => {
+    if (!supabase || !user) return
+    const sentenceKey = sentenceKeyOf(item, index)
+    const bucket = store.sentenceStatsByScript[scriptId] ?? {}
+    const base: SentenceStat = bucket[sentenceKey] ?? {
+      sentenceKey,
+      number: item.number,
+      meaning: item.meaning,
+      english: item.english,
+      flashcardUnknownCount: 0,
+      dictationAttempts: 0,
+      dictationWrongCount: 0,
     }
-    setStudyRevealed((prev) => !prev)
-  }
+    const next = updater({ ...base, number: item.number, meaning: item.meaning, english: item.english })
 
-  const markStudyCard = (known: boolean) => {
-    const sourceIndex = studyQueue[studyIndex]
-    const item = sourceIndex === undefined ? null : selectedItems[sourceIndex]
-    if (!item) return
-
-    setStudyHistory((prev) => [
-      ...prev,
-      {
-        queue: [...studyQueue],
-        unknownQueue: [...studyUnknownQueue],
-        index: studyIndex,
-        score: studyScore,
-        answeredCount: studyAnsweredCount,
-        done: studyDone,
-        revealed: studyRevealed,
-      },
-    ])
-
-    const nextUnknownQueue = known
-      ? studyUnknownQueue
-      : studyUnknownQueue.includes(sourceIndex)
-        ? studyUnknownQueue
-        : [...studyUnknownQueue, sourceIndex]
-    const nextAnsweredCount = studyAnsweredCount + 1
-    const nextScore = known ? studyScore + 1 : studyScore
-
-    setStudyUnknownQueue(nextUnknownQueue)
-    setStudyAnsweredCount(nextAnsweredCount)
-    setStudyScore(nextScore)
-
-    if (studyIndex < studyQueue.length - 1) {
-      setStudyIndex((prev) => prev + 1)
-      setStudyRevealed(false)
-      return
-    }
-
-    setStudyDone(true)
-    setStudyRevealed(false)
-  }
-
-  const undoStudyMark = () => {
-    const last = studyHistory[studyHistory.length - 1]
-    if (!last) return
-
-    setStudyHistory((prev) => prev.slice(0, -1))
-    setStudyQueue(last.queue)
-    setStudyUnknownQueue(last.unknownQueue)
-    setStudyIndex(last.index)
-    setStudyScore(last.score)
-    setStudyAnsweredCount(last.answeredCount)
-    setStudyDone(last.done)
-    setStudyRevealed(last.revealed)
-  }
-
-  const retryStudyUnknownOnly = () => {
-    if (!studyUnknownQueue.length) return
-    setStudyQueue(studyUnknownQueue)
-    setStudyUnknownQueue([])
-    setStudyIndex(0)
-    setStudyScore(0)
-    setStudyAnsweredCount(0)
-    setStudyDone(false)
-    setStudyHistory([])
-    setStudyRevealed(false)
-  }
-
-  const startQuiz = () => {
-    if (!selectedScript) return
-    const items = parseItems(selectedScript.rawText)
-    if (!items.length) {
-      setQuizError('지문 형식을 다시 확인해 주세요.')
-      return
-    }
-
-    const questions = makeExam(items, blankRatio)
-    setQuizScriptId(selectedScript.id)
-    setQuizItems(items)
-    setQuizQuestions(questions)
-    setAnswersById(createEmptyAnswers(questions))
-    setCurrentIndex(0)
-    setGradesByIndex({})
-    setFocusSignal((prev) => prev + 1)
-    setQuizBlankRatio(blankRatio)
-    setQuizError('')
-    sessionSavedRef.current = false
-    touchScript(selectedScript.id)
-    setScreen('quiz')
-  }
-
-  const gradeCurrentQuestion = () => {
-    if (!currentQuestion || currentGrade) return
-    const grade = gradeQuestion(currentQuestion, answersById)
-    setGradesByIndex((prev) => ({ ...prev, [currentIndex]: grade }))
-
-    const sourceItem = quizItems[currentQuestion.sourceIndex]
-    if (quizScriptId && sourceItem) {
-      upsertSentenceStat(quizScriptId, sourceItem, currentQuestion.sourceIndex, (stat) => ({
-        ...stat,
-        quizAttempts: stat.quizAttempts + 1,
-        wrongCount: stat.wrongCount + (grade.correct < grade.total ? 1 : 0),
-        wrongBlankCount: stat.wrongBlankCount + Math.max(0, grade.total - grade.correct),
-        lastQuizAt: nowIso(),
-      }))
-    }
-  }
-
-  const saveQuizSessionIfNeeded = () => {
-    if (!quizScriptId || sessionSavedRef.current) return
-
-    const final = Object.values(gradesByIndex).reduce(
-      (acc, grade) => ({
-        total: acc.total + grade.total,
-        correct: acc.correct + grade.correct,
-      }),
-      { total: 0, correct: 0 },
-    )
-    const wrongSentences = Object.values(gradesByIndex).filter(
-      (grade) => grade.correct < grade.total,
-    ).length
-    const createdAt = nowIso()
-    const nextSession: QuizSessionRecord = {
-      id: makeId(),
-      scriptId: quizScriptId,
-      createdAt,
-      totalQuestions: quizQuestions.length,
-      totalBlanks: final.total,
-      correctBlanks: final.correct,
-      wrongSentences,
-      blankRatio: quizBlankRatio,
-    }
-
-    sessionSavedRef.current = true
     setStore((prev) => ({
       ...prev,
-      quizSessions: [nextSession, ...prev.quizSessions].slice(0, 500),
+      sentenceStatsByScript: {
+        ...prev.sentenceStatsByScript,
+        [scriptId]: {
+          ...(prev.sentenceStatsByScript[scriptId] ?? {}),
+          [sentenceKey]: next,
+        },
+      },
     }))
 
-    if (!supabase || !username) return
-    void supabase.from('quiz_sessions').insert({
-      id: nextSession.id,
-      owner_username: username,
-      script_id: nextSession.scriptId,
-      created_at: nextSession.createdAt,
-      total_questions: nextSession.totalQuestions,
-      total_blanks: nextSession.totalBlanks,
-      correct_blanks: nextSession.correctBlanks,
-      wrong_sentences: nextSession.wrongSentences,
-      blank_ratio: nextSession.blankRatio,
-    })
-      .then(({ error }) => {
-        if (error) setSyncError(`퀴즈 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
-      })
+    const { error } = await supabase.from('sentence_stats').upsert(
+      {
+        owner_id: user.id,
+        script_id: scriptId,
+        sentence_key: sentenceKey,
+        number: next.number,
+        meaning: next.meaning,
+        english: next.english,
+        flashcard_unknown_count: next.flashcardUnknownCount,
+        dictation_attempts: next.dictationAttempts,
+        dictation_wrong_count: next.dictationWrongCount,
+        last_studied_at: next.lastStudiedAt ?? null,
+        last_dictation_at: next.lastDictationAt ?? null,
+        updated_at: nowIso(),
+      },
+      { onConflict: 'owner_id,script_id,sentence_key' },
+    )
+    if (error) setSyncError(`문장 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
   }
 
-  const goNextQuestion = () => {
-    if (!currentQuestion || !currentGrade) return
-    if (currentIndex < quizQuestions.length - 1) {
-      setCurrentIndex((prev) => prev + 1)
-      setFocusSignal((prev) => prev + 1)
-      return
-    }
-    saveQuizSessionIfNeeded()
-    setCurrentIndex(quizQuestions.length)
-  }
-
-  const moveQuestionForward = () => {
-    if (isQuizFinished || !quizQuestions.length) return
-    if (currentIndex === quizQuestions.length - 1) {
-      if (currentGrade) {
-        goNextQuestion()
+  const recordWords = async (
+    scriptId: string,
+    words: string[],
+    source: 'dictation' | 'flashcard',
+  ) => {
+    if (!supabase || !user || !words.length) return
+    const normalizedWords = Array.from(new Set(words.map(normalizeWord).filter(Boolean)))
+    const timestamp = nowIso()
+    const current = store.wordStatsByScript[scriptId] ?? []
+    const rows = normalizedWords.map((word) => {
+      const existing = current.find((stat) => stat.word === word && stat.source === source)
+      return {
+        owner_id: user.id,
+        script_id: scriptId,
+        word,
+        source,
+        wrong_count: (existing?.wrongCount ?? 0) + 1,
+        last_wrong_at: timestamp,
+        updated_at: timestamp,
       }
-      return
-    }
-
-    setCurrentIndex((prev) => clamp(prev + 1, 0, quizQuestions.length - 1))
-    setFocusSignal((prev) => prev + 1)
-  }
-
-  const clearCurrentAnswers = () => {
-    if (!currentQuestion || currentGrade) return
-    const nextAnswers = { ...answersById }
-    currentBlanks.forEach((blank) => {
-      nextAnswers[blank.blankId] = ''
     })
-    setAnswersById(nextAnswers)
-  }
 
-  const handleBlankEnter = (blankId: string) => {
-    if (currentGrade) {
-      goNextQuestion()
-      return
-    }
-
-    const blankIndex = currentBlanks.findIndex((blank) => blank.blankId === blankId)
-    if (blankIndex < 0) return
-
-    const nextBlank = currentBlanks[blankIndex + 1]
-    if (nextBlank) {
-      const nextInput = blankInputRefs.current[nextBlank.blankId]
-      nextInput?.focus()
-      nextInput?.select()
-      return
-    }
-
-    gradeCurrentQuestion()
-  }
-
-  const markWrongBlankAsCorrect = (blankId: string, answer: string) => {
-    if (!currentGrade || currentGrade.checkedById[blankId]) return
-
-    setAnswersById((prev) => ({ ...prev, [blankId]: answer }))
-    setGradesByIndex((prev) => {
-      const grade = prev[currentIndex]
-      if (!grade || grade.checkedById[blankId]) return prev
+    setStore((prev) => {
+      const bucket = [...(prev.wordStatsByScript[scriptId] ?? [])]
+      rows.forEach((row) => {
+        const targetIndex = bucket.findIndex((stat) => stat.word === row.word && stat.source === source)
+        const nextStat: WordStat = {
+          word: row.word,
+          source,
+          wrongCount: row.wrong_count,
+          lastWrongAt: timestamp,
+        }
+        if (targetIndex >= 0) bucket[targetIndex] = nextStat
+        else bucket.push(nextStat)
+      })
       return {
         ...prev,
-        [currentIndex]: {
-          ...grade,
-          correct: Math.min(grade.total, grade.correct + 1),
-          checkedById: { ...grade.checkedById, [blankId]: true },
+        wordStatsByScript: {
+          ...prev.wordStatsByScript,
+          [scriptId]: bucket,
+        },
+      }
+    })
+
+    const { error } = await supabase.from('word_stats').upsert(rows, {
+      onConflict: 'owner_id,script_id,word,source',
+    })
+    if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
+  const weakIndexesForSelected = () => {
+    const weakKeys = new Set(
+      Object.values(selectedStats)
+        .filter((stat) => stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
+        .map((stat) => stat.sentenceKey),
+    )
+    const indexes = selectedItems
+      .map((item, index) => ({ index, key: sentenceKeyOf(item, index) }))
+      .filter(({ key }) => weakKeys.has(key))
+      .map(({ index }) => index)
+    return indexes.length ? indexes : selectedItems.map((_, index) => index)
+  }
+
+  const startFlashcard = () => {
+    if (!selectedScript || !selectedItems.length) return
+    const queue = weakOnly ? weakIndexesForSelected() : selectedItems.map((_, index) => index)
+    setFlashQueue(queue)
+    setFlashIndex(0)
+    setFlashRevealed(false)
+    setFlashUnknown([])
+    touchScript(selectedScript.id)
+    setScreen('flashcard')
+  }
+
+  const finishFlashcard = async () => {
+    if (!supabase || !user || !selectedScript) return
+    const trackedWords = selectedWordStats
+      .filter((stat) => stat.source === 'flashcard')
+      .sort((a, b) => b.wrongCount - a.wrongCount)
+      .slice(0, 20)
+      .map((stat) => stat.word)
+    await supabase.from('flashcard_sessions').insert({
+      id: makeId(),
+      owner_id: user.id,
+      script_id: selectedScript.id,
+      created_at: nowIso(),
+      total_cards: flashQueue.length,
+      unknown_cards: flashUnknown.length,
+      tracked_words: trackedWords,
+    })
+  }
+
+  const advanceFlashcard = async (known: boolean) => {
+    if (!selectedScript) return
+    const sourceIndex = flashQueue[flashIndex]
+    const item = selectedItems[sourceIndex]
+    if (!item) return
+
+    if (!known) {
+      setFlashUnknown((prev) => (prev.includes(sourceIndex) ? prev : [...prev, sourceIndex]))
+      await upsertSentenceStat(selectedScript.id, item, sourceIndex, (stat) => ({
+        ...stat,
+        flashcardUnknownCount: stat.flashcardUnknownCount + 1,
+        lastStudiedAt: nowIso(),
+      }))
+      if (trackFlashWords) {
+        setPendingFlashIndex(sourceIndex)
+        setSelectedWords(new Set())
+        setWordPickerOpen(true)
+        return
+      }
+    }
+
+    if (flashIndex >= flashQueue.length - 1) {
+      await finishFlashcard()
+      setFlashIndex(flashQueue.length)
+      return
+    }
+    setFlashIndex((prev) => prev + 1)
+    setFlashRevealed(false)
+  }
+
+  const moveFlashcard = (direction: -1 | 1) => {
+    if (!flashQueue.length || wordPickerOpen) return
+    setFlashIndex((prev) => clamp(prev + direction, 0, flashQueue.length - 1))
+    setFlashRevealed(false)
+  }
+
+  const closeWordPicker = async (save: boolean) => {
+    if (save && selectedScript && selectedWords.size) {
+      await recordWords(selectedScript.id, Array.from(selectedWords), 'flashcard')
+    }
+    setWordPickerOpen(false)
+    setPendingFlashIndex(null)
+    setSelectedWords(new Set())
+    if (flashIndex >= flashQueue.length - 1) {
+      await finishFlashcard()
+      setFlashIndex(flashQueue.length)
+      return
+    }
+    setFlashIndex((prev) => prev + 1)
+    setFlashRevealed(false)
+  }
+
+  const upsertActiveDictation = async (
+    scriptId: string,
+    mode: 'standard' | 'weak',
+    state: ActiveDictationState,
+  ) => {
+    if (!supabase || !user) return
+    const timestamp = nowIso()
+    const existing = store.activeQuizzes.find(
+      (quiz) => quiz.scriptId === scriptId && quiz.quizType === 'dictation',
+    )
+    const record: ActiveQuizRecord = {
+      id: existing?.id ?? makeId(),
+      scriptId,
+      quizType: 'dictation',
+      mode,
+      state,
+      updatedAt: timestamp,
+    }
+
+    setStore((prev) => ({
+      ...prev,
+      activeQuizzes: [
+        record,
+        ...prev.activeQuizzes.filter(
+          (quiz) => !(quiz.scriptId === scriptId && quiz.quizType === 'dictation'),
+        ),
+      ],
+    }))
+
+    const { error } = await supabase.from('active_quizzes').upsert(
+      {
+        id: record.id,
+        owner_id: user.id,
+        script_id: scriptId,
+        quiz_type: 'dictation',
+        mode,
+        state,
+        updated_at: timestamp,
+      },
+      { onConflict: 'owner_id,script_id,quiz_type' },
+    )
+    if (error) setSyncError(`진행 중 퀴즈 저장 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
+  const deleteActiveDictation = async (scriptId: string) => {
+    if (!supabase) return
+    setStore((prev) => ({
+      ...prev,
+      activeQuizzes: prev.activeQuizzes.filter(
+        (quiz) => !(quiz.scriptId === scriptId && quiz.quizType === 'dictation'),
+      ),
+    }))
+    const { error } = await supabase
+      .from('active_quizzes')
+      .delete()
+      .eq('script_id', scriptId)
+      .eq('quiz_type', 'dictation')
+    if (error) setSyncError(`진행 중 퀴즈 삭제 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
+  const resumeDictation = (quiz: ActiveQuizRecord) => {
+    setSelectedScriptId(quiz.scriptId)
+    setDictationMode(quiz.mode)
+    setDictationQuestions(quiz.state.questions)
+    setAnswersById(quiz.state.answersById)
+    setGradesByIndex(
+      Object.fromEntries(
+        Object.entries(quiz.state.gradesByIndex).map(([index, grade]) => [Number(index), grade]),
+      ),
+    )
+    setDictationIndex(quiz.state.currentIndex)
+    touchScript(quiz.scriptId)
+    setScreen('dictation')
+  }
+
+  const startDictation = (mode: 'standard' | 'weak') => {
+    if (!selectedScript || !selectedItems.length) return
+    const weakWords = new Set(
+      selectedWordStats
+        .filter((stat) => stat.wrongCount > 0)
+        .sort((a, b) => b.wrongCount - a.wrongCount)
+        .map((stat) => stat.word),
+    )
+    const sourceIndexes =
+      mode === 'weak' ? weakIndexesForSelected() : selectedItems.map((_, index) => index)
+    const questions = sourceIndexes.map((index) =>
+      makeDictationQuestion(selectedItems[index], index, weakWords),
+    )
+    const initialAnswers = createAnswers(questions)
+    setDictationMode(mode)
+    setDictationQuestions(questions)
+    setAnswersById(initialAnswers)
+    setGradesByIndex({})
+    setDictationIndex(0)
+    void upsertActiveDictation(selectedScript.id, mode, {
+      questions,
+      answersById: initialAnswers,
+      gradesByIndex: {},
+      currentIndex: 0,
+    })
+    touchScript(selectedScript.id)
+    setScreen('dictation')
+  }
+
+  useEffect(() => {
+    if (screen === 'flashcard' && selectedScript && selectedItems.length && !flashQueue.length) {
+      setFlashQueue(selectedItems.map((_, index) => index))
+      setFlashIndex(0)
+      setFlashRevealed(false)
+      setFlashUnknown([])
+    }
+    if (
+      screen === 'dictation' &&
+      selectedScript &&
+      selectedItems.length &&
+      !dictationQuestions.length
+    ) {
+      startDictation('standard')
+    }
+  }, [dictationQuestions.length, flashQueue.length, screen, selectedItems, selectedScript])
+
+  const gradeCurrent = async () => {
+    if (!currentQuestion || currentGrade || !selectedScript) return
+    const grade = gradeQuestion(currentQuestion, answersById)
+    const nextGrades = { ...gradesByIndex, [dictationIndex]: grade }
+    setGradesByIndex(nextGrades)
+    await upsertSentenceStat(
+      selectedScript.id,
+      currentQuestion.item,
+      currentQuestion.sourceIndex,
+      (stat) => ({
+        ...stat,
+        dictationAttempts: stat.dictationAttempts + 1,
+        dictationWrongCount: stat.dictationWrongCount + (grade.correct < grade.total ? 1 : 0),
+        lastDictationAt: nowIso(),
+      }),
+    )
+    if (grade.wrongWords.length) {
+      await recordWords(selectedScript.id, grade.wrongWords, 'dictation')
+    }
+    await upsertActiveDictation(selectedScript.id, dictationMode, {
+      questions: dictationQuestions,
+      answersById,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(nextGrades).map(([index, itemGrade]) => [String(index), itemGrade]),
+      ),
+      currentIndex: dictationIndex,
+    })
+  }
+
+  const saveDictationSession = async () => {
+    if (!supabase || !user || !selectedScript) return
+    const grades = Object.values(gradesByIndex)
+    const wrongWords = Array.from(new Set(grades.flatMap((grade) => grade.wrongWords)))
+    const session: DictationSessionRecord = {
+      id: makeId(),
+      scriptId: selectedScript.id,
+      mode: dictationMode,
+      createdAt: nowIso(),
+      totalQuestions: dictationQuestions.length,
+      correctQuestions: grades.filter((grade) => grade.correct === grade.total).length,
+      wrongQuestions: grades.filter((grade) => grade.correct < grade.total).length,
+      wrongWords,
+    }
+    setStore((prev) => ({
+      ...prev,
+      dictationSessions: [session, ...prev.dictationSessions],
+    }))
+    const { error } = await supabase.from('dictation_sessions').insert({
+      id: session.id,
+      owner_id: user.id,
+      script_id: session.scriptId,
+      mode: session.mode,
+      created_at: session.createdAt,
+      total_questions: session.totalQuestions,
+      correct_questions: session.correctQuestions,
+      wrong_questions: session.wrongQuestions,
+      wrong_words: session.wrongWords,
+    })
+    if (error) setSyncError(`받아쓰기 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
+  const deleteDictationSession = async (session: DictationSessionRecord) => {
+    if (!supabase) return
+    const client = supabase
+    if (!window.confirm('이 받아쓰기 기록을 삭제할까요? 기록된 취약 단어도 함께 조정됩니다.')) return
+
+    const { error } = await client.from('dictation_sessions').delete().eq('id', session.id)
+    if (error) {
+      setSyncError(`받아쓰기 기록 삭제 실패: ${toFriendlyDbError(error.message)}`)
+      return
+    }
+
+    const wordCounts = session.wrongWords.reduce<Record<string, number>>((acc, word) => {
+      const normalized = normalizeWord(word)
+      if (!normalized) return acc
+      acc[normalized] = (acc[normalized] ?? 0) + 1
+      return acc
+    }, {})
+
+    await Promise.all(
+      Object.entries(wordCounts).map(async ([word, count]) => {
+        const existing = (store.wordStatsByScript[session.scriptId] ?? []).find(
+          (stat) => stat.source === 'dictation' && stat.word === word,
+        )
+        if (!existing) return
+        const nextCount = existing.wrongCount - count
+        if (nextCount <= 0) {
+          await client
+            .from('word_stats')
+            .delete()
+            .eq('script_id', session.scriptId)
+            .eq('word', word)
+            .eq('source', 'dictation')
+          return
+        }
+        await client
+          .from('word_stats')
+          .update({ wrong_count: nextCount, updated_at: nowIso() })
+          .eq('script_id', session.scriptId)
+          .eq('word', word)
+          .eq('source', 'dictation')
+      }),
+    )
+
+    setStore((prev) => {
+      const currentWords = prev.wordStatsByScript[session.scriptId] ?? []
+      const nextWords = currentWords
+        .map((stat) => {
+          if (stat.source !== 'dictation') return stat
+          const count = wordCounts[stat.word] ?? 0
+          if (!count) return stat
+          return { ...stat, wrongCount: stat.wrongCount - count, lastWrongAt: nowIso() }
+        })
+        .filter((stat) => stat.wrongCount > 0)
+
+      return {
+        ...prev,
+        dictationSessions: prev.dictationSessions.filter((item) => item.id !== session.id),
+        wordStatsByScript: {
+          ...prev.wordStatsByScript,
+          [session.scriptId]: nextWords,
         },
       }
     })
   }
 
-  const wrongIndexes = quizQuestions
-    .map((_, index) => index)
-    .filter((index) => {
-      const grade = gradesByIndex[index]
-      return Boolean(grade && grade.correct < grade.total)
-    })
-
-  const retryWrongOnly = () => {
-    if (!wrongIndexes.length) return
-
-    const wrongItems = wrongIndexes
-      .map((index) => {
-        const question = quizQuestions[index]
-        return question ? quizItems[question.sourceIndex] : null
+  const goNextDictation = async () => {
+    if (!currentQuestion || !currentGrade) return
+    if (dictationIndex >= dictationQuestions.length - 1) {
+      setDictationIndex(dictationQuestions.length)
+      await saveDictationSession()
+      if (selectedScript) await deleteActiveDictation(selectedScript.id)
+      return
+    }
+    const nextIndex = dictationIndex + 1
+    setDictationIndex(nextIndex)
+    if (selectedScript) {
+      await upsertActiveDictation(selectedScript.id, dictationMode, {
+        questions: dictationQuestions,
+        answersById,
+        gradesByIndex: Object.fromEntries(
+          Object.entries(gradesByIndex).map(([index, grade]) => [String(index), grade]),
+        ),
+        currentIndex: nextIndex,
       })
-      .filter((item): item is QuizItem => Boolean(item))
-    if (!wrongItems.length) return
-
-    const questions = makeExam(wrongItems, quizBlankRatio)
-    setQuizItems(wrongItems)
-    setQuizQuestions(questions)
-    setAnswersById(createEmptyAnswers(questions))
-    setCurrentIndex(0)
-    setGradesByIndex({})
-    setFocusSignal((prev) => prev + 1)
-    sessionSavedRef.current = false
+    }
   }
 
-  const finalScore = Object.values(gradesByIndex).reduce(
-    (acc, grade) => ({
-      total: acc.total + grade.total,
-      correct: acc.correct + grade.correct,
-    }),
-    { total: 0, correct: 0 },
-  )
+  const moveDictationQuestion = (direction: -1 | 1) => {
+    if (!dictationQuestions.length || isDictationDone) return
+    setDictationIndex((prev) => clamp(prev + direction, 0, dictationQuestions.length - 1))
+  }
 
-  const solvedCount = isQuizFinished ? quizQuestions.length : Object.keys(gradesByIndex).length
-  const progressRatio = quizQuestions.length ? solvedCount / quizQuestions.length : 0
+  const handleBlankEnter = (blankId: string) => {
+    if (!currentQuestion) return
+    if (currentGrade) {
+      void goNextDictation()
+      return
+    }
+    const blanks = collectBlanks(currentQuestion)
+    const index = blanks.findIndex((blank) => blank.blankId === blankId)
+    const next = blanks[index + 1]
+    if (next) {
+      inputRefs.current[next.blankId]?.focus()
+      inputRefs.current[next.blankId]?.select()
+      return
+    }
+    void gradeCurrent()
+  }
 
-  const sortedScripts = [...store.scripts].sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
-  )
-
-  const totalStudyReveal = Object.values(store.sentenceStatsByScript).reduce(
-    (acc, scriptBucket) =>
-      acc + Object.values(scriptBucket).reduce((sum, stat) => sum + stat.studyRevealCount, 0),
-    0,
-  )
-
-  const globalConfusing = Object.entries(store.sentenceStatsByScript)
-    .flatMap(([scriptId, bucket]) => {
-      const title = store.scripts.find((script) => script.id === scriptId)?.title ?? '삭제된 지문'
-      return Object.values(bucket).map((stat) => ({ ...stat, scriptTitle: title }))
+  const saveCurrentDictationProgress = async () => {
+    if (!selectedScript || !dictationQuestions.length) return
+    await upsertActiveDictation(selectedScript.id, dictationMode, {
+      questions: dictationQuestions,
+      answersById,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(gradesByIndex).map(([index, grade]) => [String(index), grade]),
+      ),
+      currentIndex: dictationIndex,
     })
-    .sort((a, b) => {
-      if (b.wrongCount !== a.wrongCount) return b.wrongCount - a.wrongCount
-      return b.wrongBlankCount - a.wrongBlankCount
+  }
+
+  const resetCurrentAnswers = () => {
+    if (!currentQuestion || currentGrade) return
+    setAnswersById((prev) => {
+      const next = { ...prev }
+      collectBlanks(currentQuestion).forEach((blank) => {
+        next[blank.blankId] = ''
+      })
+      return next
     })
-    .slice(0, 6)
+  }
 
   if (!supabase) {
     return (
-      <div className="app-shell">
-        <main className="page">
-          <section className="panel">
-            <p className="empty-text">
-              Supabase 연결 정보가 없습니다. `.env`의 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-              를 확인해 주세요.
-            </p>
-          </section>
-        </main>
-      </div>
+      <main className="center-page">
+        <section className="auth-card">
+          <img src="/logo/logo.png" alt="몰입 스터디" className="auth-logo" />
+          <h1>Supabase 연결 필요</h1>
+          <p className="muted">`.env`에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 설정해 주세요.</p>
+        </section>
+      </main>
     )
   }
 
-  if (!username) {
+  if (!isAuthReady || isLoadingStore) {
     return (
-      <div className="app-shell">
-        <main className="page form-page">
-          <section className="panel form-panel username-panel">
-            <div className="panel-top">
-              <h2>유저네임 설정</h2>
+      <main className="loading-screen">
+        <aside className="loading-sidebar" aria-hidden="true">
+          <div className="loading-brand">
+            <img src="/logo/logo.png" alt="" />
+            <span />
+          </div>
+          <div className="loading-nav-line wide" />
+          <div className="loading-nav-line" />
+          <div className="loading-nav-line short" />
+          <div className="loading-account" />
+        </aside>
+        <section className="loading-workspace" aria-live="polite">
+          <div className="loading-top">
+            <div>
+              <p className="eyebrow">Scripts</p>
+              <h1>내 스크립트</h1>
             </div>
+            <div className="loading-button" />
+          </div>
+          <div className="loading-grid">
+            <article className="loading-preview main">
+              <span />
+              <strong />
+              <p />
+              <p className="short" />
+            </article>
+            <article className="loading-preview">
+              <span />
+              <strong />
+              <p />
+            </article>
+          </div>
+          <div className="loading-list">
+            <div />
+            <div />
+            <div />
+          </div>
+          <p className="loading-caption">몰입 스크립트를 불러오는 중입니다.</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (!user || screen === 'auth') {
+    return (
+      <main className="center-page">
+        <section className={`auth-card ${authMode === 'signup' ? 'signup-mode' : 'login-mode'}`}>
+          <div className="auth-head">
+            <img src="/logo/logo.png" alt="몰입 스터디" className="auth-logo" />
+            <div>
+              <p className="eyebrow">Molip Study</p>
+              <h1>{authMode === 'login' ? '몰입 스크립트' : '계정 만들기'}</h1>
+              <p className="muted">
+                {authMode === 'login'
+                  ? '아이디와 비밀번호로 학습 기록을 불러옵니다.'
+                  : '아이디, 이메일, 비밀번호를 등록합니다.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="auth-mode-tabs" role="tablist" aria-label="인증 모드">
+            <button
+              className={authMode === 'login' ? 'active' : ''}
+              onClick={() => {
+                setAuthMode('login')
+                setAuthError('')
+                setAuthNotice('')
+              }}
+            >
+              로그인
+            </button>
+            <button
+              className={authMode === 'signup' ? 'active' : ''}
+              onClick={() => {
+                setAuthMode('signup')
+                setAuthError('')
+                setAuthNotice('')
+              }}
+            >
+              회원가입
+            </button>
+          </div>
+
+          {authMode === 'signup' && (
+            <div className="signup-note">
+              <strong>회원가입 정보</strong>
+              <span>이메일은 로그인과 계정 복구에 사용하고, 아이디는 서비스 안에서 표시됩니다.</span>
+            </div>
+          )}
+
+          <label className="field">
+            <span>아이디</span>
+            <input
+              value={loginId}
+              onChange={(event) => setLoginId(event.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="예: molip01"
+            />
+          </label>
+          {authMode === 'signup' && (
             <label className="field">
-              <span>유저네임</span>
+              <span>이메일</span>
               <input
-                value={usernameInput}
-                onChange={(event) => setUsernameInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter') return
-                  event.preventDefault()
-                  submitUsername()
-                }}
-                placeholder="예: minji-1"
+                value={signupEmail}
+                onChange={(event) => setSignupEmail(event.target.value)}
+                type="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="name@example.com"
               />
             </label>
-            {syncError && <p className="error-text">{syncError}</p>}
-            <div className="form-actions">
-              <button className="primary-btn" onClick={submitUsername}>
-                시작하기
-              </button>
-            </div>
-          </section>
-        </main>
-      </div>
+          )}
+          <label className="field">
+            <span>비밀번호</span>
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void handleAuth()
+              }}
+              type="password"
+            />
+          </label>
+          {authError && <p className="error-text">{authError}</p>}
+          {authNotice && <p className="notice-text">{authNotice}</p>}
+          <button className="primary-btn full-btn" onClick={() => void handleAuth()}>
+            {authMode === 'login' ? '로그인' : '회원가입'}
+          </button>
+        </section>
+      </main>
     )
   }
 
-  if (isLoadingStore) {
-    return (
-      <div className="app-shell">
-        <main className="page">
-          <section className="panel">
-            <p className="empty-text">{username} 데이터 불러오는 중...</p>
-          </section>
-        </main>
+  const closeMobileSidebar = () => setIsMobileSidebarOpen(false)
+
+  const sidebarContent = (variant: 'desktop' | 'mobile') => (
+    <>
+      <button
+        className="brand-button"
+        onClick={() => {
+          setScreen('home')
+          closeMobileSidebar()
+        }}
+      >
+        <img src="/logo/logo.png" alt="몰입 스터디" />
+        <span>
+          <small>Molip Study</small>
+          몰입 스크립트
+        </span>
+      </button>
+      <nav className="sidebar-nav">
+        <button
+          className={screen === 'home' ? 'active' : ''}
+          onClick={() => {
+            setScreen('home')
+            closeMobileSidebar()
+          }}
+        >
+          홈
+        </button>
+        <button
+          onClick={() => {
+            openEditor()
+            closeMobileSidebar()
+          }}
+        >
+          스크립트 추가
+        </button>
+      </nav>
+      <details className="brand-links">
+        <summary>몰입 스터디 서비스</summary>
+        {BRAND_LINKS.map((link) => (
+          <a key={link.label} href={link.href} target="_blank" rel="noreferrer">
+            {link.label}
+          </a>
+        ))}
+      </details>
+      <div className="account-box">
+        <p>{displayLoginId(user)}</p>
+        <button
+          onClick={() => {
+            closeMobileSidebar()
+            void signOut()
+          }}
+        >
+          로그아웃
+        </button>
       </div>
-    )
-  }
+      {variant === 'mobile' && (
+        <button className="text-btn mobile-sidebar-close" onClick={closeMobileSidebar}>
+          닫기
+        </button>
+      )}
+    </>
+  )
+
+  const shell = (content: React.ReactNode) => (
+    <div className="app-layout">
+      <aside className="sidebar">{sidebarContent('desktop')}</aside>
+      {isMobileSidebarOpen && (
+        <div className="mobile-sidebar-backdrop" onClick={closeMobileSidebar}>
+          <aside className="mobile-sidebar" onClick={(event) => event.stopPropagation()}>
+            {sidebarContent('mobile')}
+          </aside>
+        </div>
+      )}
+      <main className="workspace">
+        <header className="mobile-header">
+          <button className="brand-button" onClick={() => setIsMobileSidebarOpen(true)}>
+          <img src="/logo/logo.png" alt="몰입 스터디" />
+            <span>몰입 스크립트</span>
+          </button>
+          <button onClick={() => openEditor()}>추가</button>
+        </header>
+        {syncError && <p className="sync-error">{syncError}</p>}
+        {content}
+      </main>
+    </div>
+  )
 
   if (screen === 'home') {
-    return (
-      <div className="app-shell">
-        <main className="page home-page">
-          <section className="hero">
-            <p className="kicker">Molip English Lab</p>
-            <h1>스크립트 단위로 학습과 퀴즈를 관리하세요</h1>
-            <p>
-              홈에서 새 지문을 만들거나 저장된 기록을 선택하고, 지문 안에서 학습 카드와 빈칸
-              퀴즈를 바로 시작할 수 있습니다.
-            </p>
-            <p className="user-chip">현재 사용자: {username}</p>
-            <div className="hero-actions">
-              <button className="primary-btn large-btn" onClick={openCreate}>
-                새 지문 만들기
+    return shell(
+      <section className="home-surface">
+        <div className="page-top compact">
+          <div>
+            <p className="eyebrow">Scripts</p>
+            <h1>내 스크립트</h1>
+          </div>
+          <button className="primary-btn" onClick={() => openEditor()}>
+            스크립트 추가
+          </button>
+        </div>
+        {!sortedScripts.length ? (
+          <div className="empty-state">
+            <h2>저장된 스크립트가 없습니다.</h2>
+            <p>첫 스크립트를 추가하면 홈에는 스크립트 목록만 표시됩니다.</p>
+          </div>
+        ) : (
+          <div className="script-list">
+            {sortedScripts.map((script) => {
+              const itemCount = parseItems(script.rawText).length
+              return (
+                <button key={script.id} className="script-row" onClick={() => openScript(script.id)}>
+                  <span>
+                    <strong>{script.title}</strong>
+                    <small>
+                      문장 {itemCount}개 · 최근 수정 {formatDateTime(script.updatedAt)}
+                    </small>
+                  </span>
+                  <span className="row-arrow">›</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </section>,
+    )
+  }
+
+  if (screen === 'editor') {
+    return shell(
+      <section className="editor-page">
+        <div className="page-top">
+          <div>
+            <p className="eyebrow">Script Editor</p>
+            <h1>{editingScriptId ? '스크립트 수정' : '스크립트 추가'}</h1>
+          </div>
+          <button onClick={() => setScreen(editingScriptId ? 'script' : 'home')}>취소</button>
+        </div>
+        <label className="field">
+          <span>제목</span>
+          <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>본문</span>
+          <textarea
+            value={draftRawText}
+            onChange={(event) => setDraftRawText(event.target.value)}
+            spellCheck={false}
+            placeholder={'1. 한글 뜻\nEnglish sentence.\n\n2. 한글 뜻\nEnglish sentence.'}
+          />
+        </label>
+        {draftError && <p className="error-text">{draftError}</p>}
+        <div className="button-row">
+          <button className="primary-btn" onClick={() => void saveScript()}>
+            저장
+          </button>
+          {editingScriptId && (
+            <button className="danger-btn" onClick={() => void deleteScript(editingScriptId)}>
+              삭제
+            </button>
+          )}
+        </div>
+      </section>,
+    )
+  }
+
+  if ((screen === 'script' || screen === 'study-select') && selectedScript) {
+    const sessions = store.dictationSessions
+      .filter((session) => session.scriptId === selectedScript.id)
+      .slice(0, 4)
+    const weakWords = new Set(
+      selectedWordStats.filter((stat) => stat.wrongCount > 0).map((stat) => stat.word),
+    )
+    return shell(
+      <section className="script-detail-page">
+        <div className="script-hero">
+          <div>
+            <button className="text-btn" onClick={() => setScreen('home')}>
+              홈으로
+            </button>
+            <h1>{selectedScript.title}</h1>
+            <p>문장 {selectedItems.length}개 · 최근 열람 {formatDateTime(selectedScript.lastOpenedAt)}</p>
+          </div>
+          <div className="script-actions">
+            <button onClick={() => openEditor(selectedScript)}>스크립트 수정</button>
+            <button className="primary-btn jumbo-btn" onClick={() => setScreen('study-select')}>
+              학습하기
+            </button>
+          </div>
+        </div>
+
+        {selectedActiveQuiz && (
+          <section className="resume-banner">
+            <div>
+              <strong>진행 중인 받아쓰기가 있습니다.</strong>
+              <span>
+                {selectedActiveQuiz.mode === 'weak' ? '취약 문장 연습' : '전체 받아쓰기'} ·{' '}
+                {Math.min(
+                  selectedActiveQuiz.state.currentIndex + 1,
+                  selectedActiveQuiz.state.questions.length,
+                )}{' '}
+                / {selectedActiveQuiz.state.questions.length} · 저장{' '}
+                {formatDateTime(selectedActiveQuiz.updatedAt)}
+              </span>
+            </div>
+            <div className="button-row">
+              <button className="primary-btn" onClick={() => resumeDictation(selectedActiveQuiz)}>
+                이어하기
               </button>
-              <button className="large-btn" onClick={reloadStore}>
-                다시 불러오기
-              </button>
-              <button className="large-btn" onClick={changeUsername}>
-                사용자 변경
+              <button onClick={() => void deleteActiveDictation(selectedScript.id)}>삭제</button>
+            </div>
+          </section>
+        )}
+
+        {screen === 'study-select' && (
+          <section className="study-chooser">
+            <div className="chooser-option">
+              <h2>플래시카드</h2>
+              <p>모르는 문장을 넘길 때 어려운 단어를 기록할 수 있습니다.</p>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={trackFlashWords}
+                  onChange={(event) => setTrackFlashWords(event.target.checked)}
+                />
+                X 선택 후 어려운 단어 기록
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={weakOnly}
+                  onChange={(event) => setWeakOnly(event.target.checked)}
+                />
+                취약 문장만 학습
+              </label>
+              <button className="primary-btn" onClick={startFlashcard}>
+                플래시카드 시작
               </button>
             </div>
-            {syncError && <p className="hero-error">{syncError}</p>}
+            <div className="chooser-option">
+              <h2>받아쓰기</h2>
+              <p>틀린 문장과 단어를 별도로 기록하고, 재시험에서는 취약 단어를 우선 빈칸 처리합니다.</p>
+              <button className="primary-btn" onClick={() => startDictation('standard')}>
+                전체 받아쓰기
+              </button>
+              <button onClick={() => startDictation('weak')}>취약 문장 연습</button>
+            </div>
           </section>
+        )}
 
-          <section className="stat-grid">
-            <article className="stat-card">
-              <p>저장 지문</p>
-              <strong>{store.scripts.length}</strong>
-            </article>
-            <article className="stat-card">
-              <p>퀴즈 기록</p>
-              <strong>{store.quizSessions.length}</strong>
-            </article>
-            <article className="stat-card">
-              <p>학습 뒤집기</p>
-              <strong>{totalStudyReveal}</strong>
-            </article>
-          </section>
+        <section className="body-panel">
+          <div className="panel-top">
+            <h2>스크립트 본문</h2>
+          </div>
+          <div className="script-body">
+            {selectedItems.map((item, index) => {
+              const stat = selectedStats[sentenceKeyOf(item, index)]
+              const isWeakSentence =
+                Boolean(stat) &&
+                (stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
+              return (
+                <article
+                  className={isWeakSentence ? 'weak-sentence' : ''}
+                  key={`${item.number}-${item.english}`}
+                >
+                  <p>
+                    {item.number}. {item.meaning}
+                    {isWeakSentence && <span className="weak-badge">취약</span>}
+                  </p>
+                  <strong>{renderHighlightedSentence(item.english, weakWords)}</strong>
+                </article>
+              )
+            })}
+          </div>
+        </section>
 
-          <section className="panel">
+        {!!sessions.length && (
+          <section className="body-panel">
             <div className="panel-top">
-              <h2>지문 기록</h2>
+              <h2>최근 받아쓰기</h2>
             </div>
-            {!sortedScripts.length ? (
-              <p className="empty-text">아직 저장된 지문이 없습니다. 첫 지문을 만들어 주세요.</p>
-            ) : (
-              <div className="script-grid">
-                {sortedScripts.map((script) => {
-                  const itemCount = parseItems(script.rawText).length
-                  const sessionCount = store.quizSessions.filter(
-                    (session) => session.scriptId === script.id,
-                  ).length
+            <div className="session-list">
+              {sessions.map((session) => (
+                <div className="session-row" key={session.id}>
+                  <p>
+                    {formatDateTime(session.createdAt)} · 정답 {session.correctQuestions} · 오답{' '}
+                    {session.wrongQuestions}
+                  </p>
+                  <button className="danger-btn" onClick={() => void deleteDictationSession(session)}>
+                    삭제
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </section>,
+    )
+  }
+
+  if (screen === 'flashcard' && selectedScript) {
+    const done = flashIndex >= flashQueue.length
+    const sourceIndex = flashQueue[flashIndex]
+    const item = selectedItems[sourceIndex]
+    const pickerItem =
+      pendingFlashIndex === null ? null : selectedItems[pendingFlashIndex] ?? null
+    const pickerWords = pickerItem ? extractWords(pickerItem.english) : []
+
+    return shell(
+      <section className="study-page">
+        <div className="study-header">
+          <div className="study-header-actions">
+            <button onClick={() => setScreen('study-select')}>학습 선택</button>
+            <button onClick={() => moveFlashcard(-1)} disabled={flashIndex <= 0 || wordPickerOpen || done}>
+              이전
+            </button>
+          </div>
+          <div>
+            <strong>플래시카드</strong>
+            <span>
+              {Math.min(flashIndex + 1, flashQueue.length)} / {flashQueue.length}
+            </span>
+          </div>
+          <div className="study-header-actions right">
+            <button
+              onClick={() => moveFlashcard(1)}
+              disabled={flashIndex >= flashQueue.length - 1 || wordPickerOpen || done}
+            >
+              다음
+            </button>
+            <label className="toggle-line">
+              <input
+                type="checkbox"
+                checked={trackFlashWords}
+                onChange={(event) => setTrackFlashWords(event.target.checked)}
+              />
+              단어 기록
+            </label>
+          </div>
+        </div>
+
+        {done ? (
+          <section className="result-card">
+            <h1>플래시카드 완료</h1>
+            <p>모르는 카드 {flashUnknown.length}개를 기록했습니다.</p>
+            <div className="button-row">
+              <button className="primary-btn" onClick={startFlashcard}>
+                다시 학습
+              </button>
+              <button onClick={() => setScreen('script')}>스크립트로</button>
+            </div>
+          </section>
+        ) : (
+          item && (
+            <>
+              <button className="flashcard" onClick={() => setFlashRevealed((prev) => !prev)}>
+                <span>{item.number}번</span>
+                <strong>{item.meaning}</strong>
+                {flashRevealed && <em>{item.english}</em>}
+              </button>
+              <div className="study-actions">
+                <button className="danger-btn big-round" onClick={() => void advanceFlashcard(false)}>
+                  X
+                </button>
+                <button className="success-btn big-round" onClick={() => void advanceFlashcard(true)}>
+                  O
+                </button>
+              </div>
+            </>
+          )
+        )}
+
+        {wordPickerOpen && (
+          <div className="modal-backdrop">
+            <section className="word-modal">
+              <h2>어려웠던 단어 선택</h2>
+              <p>{pickerItem?.english}</p>
+              <div className="word-chip-grid">
+                {pickerWords.map((word) => (
+                  <button
+                    key={word}
+                    className={selectedWords.has(word) ? 'selected' : ''}
+                    onClick={() =>
+                      setSelectedWords((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(word)) next.delete(word)
+                        else next.add(word)
+                        return next
+                      })
+                    }
+                  >
+                    {word}
+                  </button>
+                ))}
+              </div>
+              <div className="button-row">
+                <button className="primary-btn" onClick={() => void closeWordPicker(true)}>
+                  기록
+                </button>
+                <button onClick={() => void closeWordPicker(false)}>넘기기</button>
+              </div>
+            </section>
+          </div>
+        )}
+      </section>,
+    )
+  }
+
+  if (screen === 'dictation' && selectedScript) {
+    const total = dictationQuestions.length
+    const blanks = currentQuestion ? collectBlanks(currentQuestion) : []
+    const finalWrongIndexes = dictationQuestions
+      .map((_, index) => index)
+      .filter((index) => {
+        const grade = gradesByIndex[index]
+        return grade && grade.correct < grade.total
+      })
+
+    return shell(
+      <section className="dictation-page">
+        <div className="study-header">
+          <button
+            onClick={() => moveDictationQuestion(-1)}
+            disabled={dictationIndex <= 0 || isDictationDone}
+          >
+            이전 문장
+          </button>
+          <div>
+            <strong>받아쓰기</strong>
+            <span>
+              진행 {Math.min(dictationIndex + 1, total)} / {total} · 정답 {correctCount} · 오답 {wrongCount} · 남은{' '}
+              {Math.max(0, total - solvedCount)}
+            </span>
+          </div>
+          <button
+            onClick={() => moveDictationQuestion(1)}
+            disabled={dictationIndex >= total - 1 || isDictationDone}
+          >
+            다음 문장
+          </button>
+        </div>
+
+        {isDictationDone ? (
+          <section className="result-card">
+            <h1>받아쓰기 완료</h1>
+            <p>
+              정답 {correctCount}개 · 오답 {wrongCount}개 · 기록된 취약 단어{' '}
+              {Array.from(new Set(Object.values(gradesByIndex).flatMap((grade) => grade.wrongWords))).length}
+              개
+            </p>
+            {!!finalWrongIndexes.length && (
+              <div className="wrong-list">
+                {finalWrongIndexes.map((index) => {
+                  const question = dictationQuestions[index]
+                  const grade = gradesByIndex[index]
                   return (
-                    <article key={script.id} className="script-card">
-                      <p className="script-title">{script.title}</p>
-                      <p className="script-meta">
-                        문장 {itemCount}개 · 퀴즈 {sessionCount}회
-                      </p>
-                      <p className="script-date">최근 열람 {formatDateTime(script.lastOpenedAt)}</p>
-                      <div className="card-actions">
-                        <button className="primary-btn" onClick={() => openScript(script.id)}>
-                          열기
-                        </button>
-                        <button onClick={() => openEdit(script)}>수정</button>
-                        <button
-                          className="danger-btn"
-                          onClick={() => {
-                            void deleteScript(script.id)
-                          }}
-                        >
-                          삭제
-                        </button>
-                      </div>
+                    <article key={question.sentenceKey}>
+                      <strong>
+                        {question.item.number}. {question.item.meaning}
+                      </strong>
+                      <p>{questionSentence(question)}</p>
+                      <small>틀린 단어: {grade.wrongWords.join(', ')}</small>
                     </article>
                   )
                 })}
               </div>
             )}
-          </section>
-
-          <section className="panel">
-            <div className="panel-top">
-              <h2>헷갈린 문장 Top</h2>
-            </div>
-            {!globalConfusing.length ? (
-              <p className="empty-text">퀴즈를 풀면 헷갈린 문장이 자동으로 누적됩니다.</p>
-            ) : (
-              <div className="insight-list">
-                {globalConfusing.map((stat) => (
-                  <article key={`${stat.scriptTitle}-${stat.sentenceKey}`} className="insight-item">
-                    <p className="insight-head">
-                      [{stat.scriptTitle}] {stat.number}. {stat.meaning}
-                    </p>
-                    <p className="insight-body">{stat.english}</p>
-                    <p className="insight-foot">
-                      오답 {stat.wrongCount}회 · 오답 빈칸 {stat.wrongBlankCount}개
-                    </p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </main>
-      </div>
-    )
-  }
-
-  if ((screen === 'script' || screen === 'study') && !selectedScript) {
-    return (
-      <div className="app-shell">
-        <main className="page">
-          <section className="panel">
-            <p className="empty-text">선택한 지문을 찾을 수 없습니다.</p>
-            <button onClick={() => setScreen('home')}>홈으로</button>
-          </section>
-        </main>
-      </div>
-    )
-  }
-
-  if (screen === 'create') {
-    return (
-      <div className="app-shell">
-        <main className="page form-page">
-          <section className="panel form-panel">
-            <div className="panel-top">
-              <h2>{editingScriptId ? '지문 수정' : '새 지문 만들기'}</h2>
-              <button onClick={() => setScreen('home')}>홈으로</button>
-            </div>
-
-            <label className="field">
-              <span>제목</span>
-              <input
-                value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
-                placeholder="예: 중2 1과 본문"
-              />
-            </label>
-
-            <p className="format-guide">
-              입력 형식: `번호. 한글 뜻` 다음 줄에 `영어 문장`을 넣어 주세요. 대괄호 줄은 자동으로
-              무시됩니다.
-            </p>
-
-            <label className="field">
-              <span>지문</span>
-              <textarea
-                value={draftRawText}
-                onChange={(event) => setDraftRawText(event.target.value)}
-                spellCheck={false}
-                autoCapitalize="none"
-                autoCorrect="off"
-                placeholder={
-                  '형식 안내\n번호. 한글 뜻\n영어 문장\n\n번호. 한글 뜻\n영어 문장'
-                }
-              />
-            </label>
-
-            {draftError && <p className="error-text">{draftError}</p>}
-
-            <div className="form-actions">
-              <button
-                className="primary-btn"
-                onClick={() => {
-                  void saveScript()
-                }}
-              >
-                저장하고 열기
+            <div className="button-row">
+              <button className="primary-btn" onClick={() => startDictation('weak')}>
+                취약 문장 재시험
               </button>
-              <button onClick={() => setScreen('home')}>취소</button>
-            </div>
-          </section>
-        </main>
-      </div>
-    )
-  }
-
-  if (screen === 'script' && selectedScript) {
-    const topConfusing = [...scriptStats]
-      .sort((a, b) => {
-        if (b.wrongCount !== a.wrongCount) return b.wrongCount - a.wrongCount
-        return b.wrongBlankCount - a.wrongBlankCount
-      })
-      .slice(0, 7)
-
-    return (
-      <div className="app-shell">
-        <main className="page script-page">
-          <section className="panel script-panel">
-            <div className="panel-top">
-              <h2>{selectedScript.title}</h2>
-              <button onClick={() => setScreen('home')}>홈으로</button>
-            </div>
-
-            <p className="script-detail">
-              문장 {selectedItems.length}개 · 최근 열람 {formatDateTime(selectedScript.lastOpenedAt)}
-            </p>
-
-            <div className="hub-actions">
-              <button className="primary-btn large-btn" onClick={startStudy}>
-                카드 학습 시작
-              </button>
-              <button className="primary-btn large-btn" onClick={startQuiz}>
-                퀴즈 시작
-              </button>
-              <button onClick={() => openEdit(selectedScript)}>지문 수정</button>
-            </div>
-
-            <div className="ratio-box">
-              <label htmlFor="blankRatio">빈칸 비율: {blankRatio}%</label>
-              <input
-                id="blankRatio"
-                type="range"
-                min={15}
-                max={80}
-                step={5}
-                value={blankRatio}
-                onChange={(event) => setBlankRatio(Number(event.target.value))}
-              />
-              <p>비율을 높일수록 한 문장에서 가려지는 단어 수가 늘어납니다.</p>
-            </div>
-
-            {quizError && <p className="error-text">{quizError}</p>}
-          </section>
-
-          <section className="panel">
-            <div className="panel-top">
-              <h2>최근 문제 기록</h2>
-            </div>
-            {!recentSessions.length ? (
-              <p className="empty-text">아직 퀴즈 기록이 없습니다.</p>
-            ) : (
-              <div className="session-list">
-                {recentSessions.map((session) => (
-                  <article key={session.id} className="session-item">
-                    <p>{formatDateTime(session.createdAt)}</p>
-                    <p>
-                      {session.correctBlanks} / {session.totalBlanks} · 오답 문장 {session.wrongSentences}
-                      개 · 빈칸 비율 {session.blankRatio}%
-                    </p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="panel">
-            <div className="panel-top">
-              <h2>헷갈리는 문장 분석</h2>
-            </div>
-            {!topConfusing.length ? (
-              <p className="empty-text">학습/퀴즈를 진행하면 문장별 헷갈림 데이터가 누적됩니다.</p>
-            ) : (
-              <div className="insight-list">
-                {topConfusing.map((stat) => (
-                  <article key={stat.sentenceKey} className="insight-item">
-                    <p className="insight-head">
-                      {stat.number}. {stat.meaning}
-                    </p>
-                    <p className="insight-body">{stat.english}</p>
-                    <p className="insight-foot">
-                      오답 {stat.wrongCount}회 · 오답 빈칸 {stat.wrongBlankCount}개 · 카드 열람{' '}
-                      {stat.studyRevealCount}회
-                    </p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </main>
-      </div>
-    )
-  }
-
-  if (screen === 'study' && selectedScript) {
-    if (studyDone) {
-      const wrongSet = new Set(studyUnknownQueue)
-      const wrongItems = studyQueue
-        .filter((sourceIndex) => wrongSet.has(sourceIndex))
-        .map((sourceIndex) => selectedItems[sourceIndex])
-        .filter((entry): entry is QuizItem => Boolean(entry))
-
-      return (
-        <div className="app-shell">
-          <main className="page study-page">
-            <section className="panel study-panel study-done">
-              <div className="panel-top">
-                <h2>카드 학습 완료</h2>
-                <button onClick={() => setScreen('script')}>스크립트로</button>
-              </div>
-              <p className="study-status">
-                총 {studyQueue.length}장 중 {studyScore}장 아는 카드 · {studyUnknownQueue.length}장 모르는
-                카드
-              </p>
-
-              {studyUnknownQueue.length > 0 ? (
-                <section className="wrong-review">
-                  <p className="wrong-title">모르는 카드 {studyUnknownQueue.length}개</p>
-                  <div className="wrong-list">
-                    {wrongItems.map((wrongItem, index) => (
-                      <article
-                        key={`${wrongItem.number}-${index}-${wrongItem.english}`}
-                        className="wrong-item"
-                      >
-                        <p className="wrong-head">
-                          {wrongItem.number}. {wrongItem.meaning}
-                        </p>
-                        <p className="wrong-answer">{wrongItem.english}</p>
-                      </article>
-                    ))}
-                  </div>
-                  <button className="primary-btn wrong-only-btn" onClick={retryStudyUnknownOnly}>
-                    모르는 카드만 다시
-                  </button>
-                </section>
-              ) : (
-                <p className="all-correct">모든 카드를 아는 카드로 분류했습니다.</p>
-              )}
-
-              <div className="study-actions">
-                <button className="primary-btn" onClick={startStudy}>
-                  처음부터 다시
-                </button>
-                <button onClick={() => setScreen('script')}>스크립트 허브로</button>
-              </div>
-            </section>
-          </main>
-        </div>
-      )
-    }
-
-    const sourceIndex = studyQueue[studyIndex]
-    const item = sourceIndex === undefined ? null : selectedItems[sourceIndex]
-    if (!item || !studyQueue.length) {
-      return (
-        <div className="app-shell">
-          <main className="page">
-            <section className="panel">
-              <p className="empty-text">학습할 문장이 없습니다.</p>
-              <button onClick={() => setScreen('script')}>스크립트로 돌아가기</button>
-            </section>
-          </main>
-        </div>
-      )
-    }
-
-    return (
-      <div className="app-shell">
-        <main className="page study-page">
-          <section className="panel study-panel">
-            <div className="panel-top">
-              <h2>카드 학습</h2>
               <button onClick={() => setScreen('script')}>스크립트로</button>
             </div>
-            <p className="study-progress">
-              {studyIndex + 1} / {studyQueue.length}
-            </p>
-            <p className="study-meta">
-              아는 카드 {studyScore}장 · 모르는 카드 {studyUnknownQueue.length}장
-            </p>
-            <div className="progress-track">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${Math.round((studyAnsweredCount / Math.max(1, studyQueue.length)) * 100)}%`,
-                }}
-              />
-            </div>
-
-            <button className={`study-card ${studyRevealed ? 'revealed' : ''}`} onClick={toggleStudyReveal}>
-              <p className="study-number">{item.number}번</p>
-              <p className="study-meaning">{item.meaning}</p>
-              {studyRevealed && <p className="study-english">{item.english}</p>}
-              <span>{studyRevealed ? '클릭해서 다시 가리기' : '클릭해서 정답 보기'}</span>
-            </button>
-
-            <div className="study-actions">
-              <button className="warning-btn" onClick={() => markStudyCard(false)}>
-                몰라요
-              </button>
-              <button
-                className="icon-circle-btn"
-                onClick={undoStudyMark}
-                disabled={!studyHistory.length}
-                aria-label="이전 카드로 되돌리기"
-                title="이전 카드로 되돌리기"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M9 7H5v4M5 11a7 7 0 1 0 2.1-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-              <button className="success-btn" onClick={() => markStudyCard(true)}>
-                아는거
-              </button>
-            </div>
           </section>
-        </main>
-      </div>
-    )
-  }
-
-  if (screen === 'quiz') {
-    return (
-      <div className="app-shell">
-        <main className="page quiz-page">
-          <section className="panel quiz-header">
-            <div className="panel-top">
-              <h2>빈칸 퀴즈</h2>
-              <button onClick={() => setScreen('script')}>스크립트로</button>
-            </div>
-            <div className="progress-row">
-              <div className="progress-left">
-                <strong>
-                  채점 진행도 {solvedCount} / {quizQuestions.length}
-                </strong>
-                <span>총 빈칸 {totalBlanks}개</span>
-              </div>
-              {!isQuizFinished && (
-                <div className="progress-nav">
-                  <span>
-                    {currentIndex + 1} / {quizQuestions.length}
-                  </span>
-                  <button
-                    onClick={moveQuestionForward}
-                    disabled={currentIndex === quizQuestions.length - 1 && !currentGrade}
-                    aria-label="다음 문제로 이동"
-                  >
-                    →
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="progress-track">
-              <div
-                className="progress-fill"
-                style={{ width: `${Math.round(progressRatio * 100)}%` }}
-              />
-            </div>
-          </section>
-
-          {isQuizFinished ? (
-            <section className="panel result-panel">
-              <p className="result-label">완료</p>
-              <p className="result-score">
-                {finalScore.correct} / {finalScore.total}
-              </p>
-              <p className="result-percent">
-                {Math.round((finalScore.correct / Math.max(1, finalScore.total)) * 100)}점
-              </p>
-
-              {wrongIndexes.length > 0 ? (
-                <section className="wrong-review">
-                  <p className="wrong-title">틀린 문장 {wrongIndexes.length}개</p>
-                  <div className="wrong-list">
-                    {wrongIndexes.map((index) => {
-                      const question = quizQuestions[index]
-                      const grade = gradesByIndex[index]
-                      if (!question || !grade) return null
-
-                      const wrongBlanks = collectBlankUnits([question]).filter(
-                        (blank) => !grade.checkedById[blank.blankId],
-                      )
-
-                      return (
-                        <article key={`${question.number}-${index}`} className="wrong-item">
-                          <p className="wrong-head">
-                            {question.number}. {question.meaning}
-                          </p>
-                          <p className="wrong-answer">정답 문장: {toAnswerSentence(question)}</p>
-                          {!!wrongBlanks.length && (
-                            <p className="wrong-blank-list">
-                              {wrongBlanks
-                                .map((blank) => {
-                                  const user = (answersById[blank.blankId] ?? '').trim()
-                                  return `${user || '(빈칸)'} → ${blank.answer}`
-                                })
-                                .join(' · ')}
-                            </p>
-                          )}
-                        </article>
-                      )
-                    })}
-                  </div>
-                  <button className="primary-btn wrong-only-btn" onClick={retryWrongOnly}>
-                    틀린 문장만 다시 풀기
-                  </button>
-                </section>
-              ) : (
-                <p className="all-correct">전부 정답입니다.</p>
-              )}
-
-              <div className="result-actions">
-                <button className="primary-btn" onClick={startQuiz}>
-                  같은 지문으로 새 퀴즈
-                </button>
-                <button onClick={() => setScreen('script')}>스크립트 허브로</button>
-              </div>
-            </section>
-          ) : (
-            <section className="panel question-panel">
-              <button
-                className="reset-icon-btn"
-                onClick={clearCurrentAnswers}
-                disabled={Boolean(currentGrade)}
-                aria-label="현재 문장 입력 초기화"
-                title="현재 문장 입력 초기화"
-              >
-                ↺
-              </button>
-
+        ) : (
+          currentQuestion && (
+            <section className="question-card">
               <div className="question-top">
-                <p className="q-number">
-                  {currentQuestion?.number}. <span>{currentIndex + 1}번째 문장</span>
+                <p>
+                  {currentQuestion.item.number}. {currentQuestion.item.meaning}
                 </p>
                 {currentGrade && (
-                  <p className="q-score">
+                  <strong>
                     이번 문장 {currentGrade.correct} / {currentGrade.total}
-                  </p>
+                  </strong>
                 )}
               </div>
-
-              <p className="q-meaning">뜻: {currentQuestion?.meaning}</p>
-              <div className="q-sentence-wrap">
-                <p className="label">문장</p>
-                <div className="sentence-line">
-                  {currentQuestion?.units.map((unit, index) => {
-                    if (unit.kind === 'text') {
-                      return (
-                        <span className="token" key={`${currentQuestion.number}-text-${index}`}>
-                          {unit.token}
-                        </span>
-                      )
-                    }
-
-                    const isChecked = currentGrade?.checkedById[unit.blankId]
-                    const statusClass = isChecked === undefined ? '' : isChecked ? 'correct' : 'wrong'
-
-                    return (
-                      <span className="blank-cluster token" key={unit.blankId}>
-                        {unit.prefix}
-                        <input
-                          className={`blank-input ${statusClass}`}
-                          style={{ width: `${unit.width}px` }}
-                          value={answersById[unit.blankId] ?? ''}
-                          readOnly={Boolean(currentGrade)}
-                          ref={(node) => {
-                            blankInputRefs.current[unit.blankId] = node
-                          }}
-                          onChange={(event) => {
-                            if (currentGrade) return
-                            const nextValue = event.target.value
-                            setAnswersById((prev) => ({ ...prev, [unit.blankId]: nextValue }))
-                          }}
-                          onClick={() => {
-                            if (!currentGrade || isChecked) return
-                            markWrongBlankAsCorrect(unit.blankId, unit.answer)
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key !== 'Enter') return
+              <div className="sentence-line">
+                {currentQuestion.units.map((unit, index) => {
+                  if (unit.kind === 'text') {
+                    return <span key={`${unit.token}-${index}`}>{unit.token}</span>
+                  }
+                  const status = currentGrade
+                    ? currentGrade.checkedById[unit.blankId]
+                      ? 'correct'
+                      : 'wrong'
+                    : ''
+                  return (
+                    <span className="blank-wrap" key={unit.blankId}>
+                      {unit.prefix}
+                      <input
+                        ref={(node) => {
+                          inputRefs.current[unit.blankId] = node
+                        }}
+                        className={status}
+                        style={{ width: `${unit.width}px` }}
+                        value={answersById[unit.blankId] ?? ''}
+                        readOnly={Boolean(currentGrade)}
+                        onChange={(event) =>
+                          setAnswersById((prev) => ({
+                            ...prev,
+                            [unit.blankId]: event.target.value,
+                          }))
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
                             event.preventDefault()
                             handleBlankEnter(unit.blankId)
-                          }}
-                          autoCapitalize="none"
-                          autoCorrect="off"
-                          aria-label={`${currentQuestion.number}번 빈칸`}
-                        />
-                        {unit.suffix}
-                        {currentGrade && !isChecked && (
-                          <button
-                            className="answer-note"
-                            onClick={() => markWrongBlankAsCorrect(unit.blankId, unit.answer)}
-                          >
-                            {unit.answer}
-                          </button>
-                        )}
-                      </span>
-                    )
-                  })}
-                </div>
+                          }
+                        }}
+                      />
+                      {unit.suffix}
+                      {currentGrade && !currentGrade.checkedById[unit.blankId] && (
+                        <small>{unit.answer}</small>
+                      )}
+                    </span>
+                  )
+                })}
               </div>
-
-              <div className="action-bar">
+              <div className="button-row">
                 <button
-                  className={`primary-btn next-btn ${currentGrade ? 'arrow-mode' : ''}`}
-                  onClick={currentGrade ? goNextQuestion : gradeCurrentQuestion}
-                  aria-label={currentGrade ? '다음 문장으로 이동' : '현재 문장 채점'}
+                  className="primary-btn"
+                  onClick={currentGrade ? () => void goNextDictation() : () => void gradeCurrent()}
                 >
-                  {currentGrade ? '→' : '채점'}
+                  {currentGrade ? '다음' : '채점'}
+                </button>
+                <button onClick={resetCurrentAnswers} disabled={Boolean(currentGrade) || !blanks.length}>
+                  초기화
+                </button>
+                <button
+                  onClick={() => {
+                    void saveCurrentDictationProgress().then(() => setScreen('study-select'))
+                  }}
+                >
+                  나가기
                 </button>
               </div>
             </section>
-          )}
-        </main>
-      </div>
+          )
+        )}
+      </section>,
     )
   }
 
-  return (
-    <div className="app-shell">
-      <main className="page">
-        <section className="panel">
-          <p className="empty-text">유효한 화면 상태가 아닙니다.</p>
-          <button onClick={() => setScreen('home')}>홈으로</button>
-        </section>
-      </main>
-    </div>
+  return shell(
+    <section className="empty-state">
+      <h2>화면을 찾을 수 없습니다.</h2>
+      <button className="primary-btn" onClick={() => setScreen('home')}>
+        홈으로
+      </button>
+    </section>,
   )
 }
 
