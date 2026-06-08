@@ -7,7 +7,6 @@ type Screen =
   | 'home'
   | 'editor'
   | 'script'
-  | 'study-select'
   | 'flashcard'
   | 'dictation'
   | 'auth'
@@ -283,7 +282,6 @@ const parseAppPath = (pathname: string): RouteTarget => {
   if (!scriptId) return { scriptId: null, screen: 'home' }
   if (mode === 'flashcard') return { scriptId, screen: 'flashcard' }
   if (mode === 'dictation') return { scriptId, screen: 'dictation' }
-  if (mode === 'study') return { scriptId, screen: 'study-select' }
   return { scriptId, screen: 'script' }
 }
 
@@ -292,7 +290,6 @@ const pathForScreen = (screen: Screen, scriptId: string | null) => {
   const encodedId = encodeURIComponent(scriptId)
   if (screen === 'flashcard') return `/${encodedId}/flashcard`
   if (screen === 'dictation') return `/${encodedId}/dictation`
-  if (screen === 'study-select') return `/${encodedId}/study`
   if (screen === 'script') return `/${encodedId}`
   return '/'
 }
@@ -411,6 +408,25 @@ const gradeQuestion = (
     const isCorrect = typed !== '' && typed === expected
     checkedById[blank.blankId] = isCorrect
     if (isCorrect) {
+      correct += 1
+    } else {
+      wrongWords.push(normalizeWord(blank.answer))
+    }
+  })
+
+  return { total: blanks.length, correct, checkedById, wrongWords }
+}
+
+const gradeFromCheckedBlanks = (
+  question: DictationQuestion,
+  checkedById: Record<string, boolean>,
+): DictationGrade => {
+  const blanks = collectBlanks(question)
+  const wrongWords: string[] = []
+  let correct = 0
+
+  blanks.forEach((blank) => {
+    if (checkedById[blank.blankId]) {
       correct += 1
     } else {
       wrongWords.push(normalizeWord(blank.answer))
@@ -545,6 +561,8 @@ function App() {
   const [draftRawText, setDraftRawText] = useState('')
   const [draftError, setDraftError] = useState('')
 
+  const [studyModalOpen, setStudyModalOpen] = useState(false)
+  const [studyKind, setStudyKind] = useState<'flashcard' | 'dictation'>('flashcard')
   const [weakOnly, setWeakOnly] = useState(false)
   const [trackFlashWords, setTrackFlashWords] = useState(true)
   const [flashQueue, setFlashQueue] = useState<number[]>([])
@@ -1071,6 +1089,83 @@ function App() {
     if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
   }
 
+  const adjustWordStat = async (
+    scriptId: string,
+    word: string,
+    source: 'dictation' | 'flashcard',
+    delta: 1 | -1,
+  ) => {
+    if (!supabase || !user) return
+    const normalized = normalizeWord(word)
+    if (!normalized) return
+    const timestamp = nowIso()
+    const existing = (store.wordStatsByScript[scriptId] ?? []).find(
+      (stat) => stat.word === normalized && stat.source === source,
+    )
+    const nextCount = (existing?.wrongCount ?? 0) + delta
+
+    setStore((prev) => {
+      const bucket = [...(prev.wordStatsByScript[scriptId] ?? [])]
+      const targetIndex = bucket.findIndex(
+        (stat) => stat.word === normalized && stat.source === source,
+      )
+
+      if (nextCount <= 0) {
+        return {
+          ...prev,
+          wordStatsByScript: {
+            ...prev.wordStatsByScript,
+            [scriptId]: bucket.filter(
+              (stat) => !(stat.word === normalized && stat.source === source),
+            ),
+          },
+        }
+      }
+
+      const nextStat: WordStat = {
+        word: normalized,
+        source,
+        wrongCount: nextCount,
+        lastWrongAt: timestamp,
+      }
+      if (targetIndex >= 0) bucket[targetIndex] = nextStat
+      else bucket.push(nextStat)
+
+      return {
+        ...prev,
+        wordStatsByScript: {
+          ...prev.wordStatsByScript,
+          [scriptId]: bucket,
+        },
+      }
+    })
+
+    if (nextCount <= 0) {
+      const { error } = await supabase
+        .from('word_stats')
+        .delete()
+        .eq('script_id', scriptId)
+        .eq('word', normalized)
+        .eq('source', source)
+      if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+      return
+    }
+
+    const { error } = await supabase.from('word_stats').upsert(
+      {
+        owner_id: user.id,
+        script_id: scriptId,
+        word: normalized,
+        source,
+        wrong_count: nextCount,
+        last_wrong_at: timestamp,
+        updated_at: timestamp,
+      },
+      { onConflict: 'owner_id,script_id,word,source' },
+    )
+    if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
   const weakIndexesForSelected = () => {
     const weakKeys = new Set(
       Object.values(selectedStats)
@@ -1087,6 +1182,7 @@ function App() {
   const startFlashcard = () => {
     if (!selectedScript || !selectedItems.length) return
     const queue = weakOnly ? weakIndexesForSelected() : selectedItems.map((_, index) => index)
+    setStudyModalOpen(false)
     setFlashQueue(queue)
     setFlashIndex(0)
     setFlashRevealed(false)
@@ -1242,6 +1338,7 @@ function App() {
 
   const startDictation = (mode: 'standard' | 'weak') => {
     if (!selectedScript || !selectedItems.length) return
+    setStudyModalOpen(false)
     const weakWords = new Set(
       selectedWordStats
         .filter((stat) => stat.wrongCount > 0)
@@ -1290,7 +1387,6 @@ function App() {
     if (!currentQuestion || currentGrade || !selectedScript) return
     const grade = gradeQuestion(currentQuestion, answersById)
     const nextGrades = { ...gradesByIndex, [dictationIndex]: grade }
-    setGradesByIndex(nextGrades)
     await upsertSentenceStat(
       selectedScript.id,
       currentQuestion.item,
@@ -1305,6 +1401,7 @@ function App() {
     if (grade.wrongWords.length) {
       await recordWords(selectedScript.id, grade.wrongWords, 'dictation')
     }
+    setGradesByIndex(nextGrades)
     await upsertActiveDictation(selectedScript.id, dictationMode, {
       questions: dictationQuestions,
       answersById,
@@ -1463,6 +1560,52 @@ function App() {
       answersById,
       gradesByIndex: Object.fromEntries(
         Object.entries(gradesByIndex).map(([index, grade]) => [String(index), grade]),
+      ),
+      currentIndex: dictationIndex,
+    })
+  }
+
+  const toggleBlankGrade = async (blank: BlankUnit) => {
+    if (!selectedScript || !currentQuestion || !currentGrade) return
+    const wasCorrect = Boolean(currentGrade.checkedById[blank.blankId])
+    const nextCheckedById = {
+      ...currentGrade.checkedById,
+      [blank.blankId]: !wasCorrect,
+    }
+    const nextGrade = gradeFromCheckedBlanks(currentQuestion, nextCheckedById)
+    const nextGrades = { ...gradesByIndex, [dictationIndex]: nextGrade }
+    const wasWrongSentence = currentGrade.correct < currentGrade.total
+    const isWrongSentence = nextGrade.correct < nextGrade.total
+
+    setGradesByIndex(nextGrades)
+
+    await adjustWordStat(
+      selectedScript.id,
+      blank.answer,
+      'dictation',
+      wasCorrect ? 1 : -1,
+    )
+
+    if (wasWrongSentence !== isWrongSentence) {
+      await upsertSentenceStat(
+        selectedScript.id,
+        currentQuestion.item,
+        currentQuestion.sourceIndex,
+        (stat) => ({
+          ...stat,
+          dictationWrongCount: Math.max(
+            0,
+            stat.dictationWrongCount + (isWrongSentence ? 1 : -1),
+          ),
+        }),
+      )
+    }
+
+    await upsertActiveDictation(selectedScript.id, dictationMode, {
+      questions: dictationQuestions,
+      answersById,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(nextGrades).map(([index, grade]) => [String(index), grade]),
       ),
       currentIndex: dictationIndex,
     })
@@ -1704,14 +1847,85 @@ function App() {
       )}
       <main className="workspace">
         <header className="mobile-header">
-          <button className="brand-button" onClick={() => setIsMobileSidebarOpen(true)}>
-          <img src="/logo/logo.png" alt="몰입 스터디" />
+          <button className="brand-button" onClick={() => setScreen('home')}>
+            <img src="/logo/logo.png" alt="몰입 스터디" />
             <span>몰입 스크립트</span>
           </button>
-          <button onClick={() => openEditor()}>추가</button>
+          <button
+            className="hamburger-btn"
+            aria-label="사이드바 열기"
+            onClick={() => setIsMobileSidebarOpen(true)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
         </header>
         {syncError && <p className="sync-error">{syncError}</p>}
         {content}
+        {studyModalOpen && selectedScript && (
+          <div className="modal-backdrop" onClick={() => setStudyModalOpen(false)}>
+            <section className="study-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <p className="eyebrow">Study</p>
+                  <h2>학습 선택</h2>
+                </div>
+                <button className="text-btn modal-close" onClick={() => setStudyModalOpen(false)}>
+                  닫기
+                </button>
+              </div>
+
+              <div className="study-type-tabs" role="tablist" aria-label="학습 종류">
+                <button
+                  className={studyKind === 'flashcard' ? 'active' : ''}
+                  onClick={() => setStudyKind('flashcard')}
+                >
+                  플래시카드
+                </button>
+                <button
+                  className={studyKind === 'dictation' ? 'active' : ''}
+                  onClick={() => setStudyKind('dictation')}
+                >
+                  받아쓰기
+                </button>
+              </div>
+
+              <div className="study-settings">
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={weakOnly}
+                    onChange={(event) => setWeakOnly(event.target.checked)}
+                  />
+                  취약 문장 연습
+                </label>
+                {studyKind === 'flashcard' ? (
+                  <label className="check-line">
+                    <input
+                      type="checkbox"
+                      checked={trackFlashWords}
+                      onChange={(event) => setTrackFlashWords(event.target.checked)}
+                    />
+                    X 선택 후 어려운 단어 기록
+                  </label>
+                ) : (
+                  <p className="setting-note">틀린 문장과 단어를 기록하고 취약 단어를 우선 빈칸 처리합니다.</p>
+                )}
+              </div>
+
+              <button
+                className="primary-btn full-btn"
+                onClick={() => {
+                  if (studyKind === 'flashcard') startFlashcard()
+                  else startDictation(weakOnly ? 'weak' : 'standard')
+                }}
+              >
+                {studyKind === 'flashcard' ? '플래시카드 시작' : '받아쓰기 시작'}
+              </button>
+            </section>
+          </div>
+        )}
       </main>
     </div>
   )
@@ -1793,7 +2007,7 @@ function App() {
     )
   }
 
-  if ((screen === 'script' || screen === 'study-select') && selectedScript) {
+  if (screen === 'script' && selectedScript) {
     const sessions = store.dictationSessions
       .filter((session) => session.scriptId === selectedScript.id)
       .slice(0, 4)
@@ -1812,7 +2026,7 @@ function App() {
           </div>
           <div className="script-actions">
             <button onClick={() => openEditor(selectedScript)}>스크립트 수정</button>
-            <button className="primary-btn jumbo-btn" onClick={() => setScreen('study-select')}>
+            <button className="primary-btn jumbo-btn" onClick={() => setStudyModalOpen(true)}>
               학습하기
             </button>
           </div>
@@ -1837,42 +2051,6 @@ function App() {
                 이어하기
               </button>
               <button onClick={() => void deleteActiveDictation(selectedScript.id)}>삭제</button>
-            </div>
-          </section>
-        )}
-
-        {screen === 'study-select' && (
-          <section className="study-chooser">
-            <div className="chooser-option">
-              <h2>플래시카드</h2>
-              <p>모르는 문장을 넘길 때 어려운 단어를 기록할 수 있습니다.</p>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={trackFlashWords}
-                  onChange={(event) => setTrackFlashWords(event.target.checked)}
-                />
-                X 선택 후 어려운 단어 기록
-              </label>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={weakOnly}
-                  onChange={(event) => setWeakOnly(event.target.checked)}
-                />
-                취약 문장만 학습
-              </label>
-              <button className="primary-btn" onClick={startFlashcard}>
-                플래시카드 시작
-              </button>
-            </div>
-            <div className="chooser-option">
-              <h2>받아쓰기</h2>
-              <p>틀린 문장과 단어를 별도로 기록하고, 재시험에서는 취약 단어를 우선 빈칸 처리합니다.</p>
-              <button className="primary-btn" onClick={() => startDictation('standard')}>
-                전체 받아쓰기
-              </button>
-              <button onClick={() => startDictation('weak')}>취약 문장 연습</button>
             </div>
           </section>
         )}
@@ -1939,7 +2117,7 @@ function App() {
       <section className="study-page">
         <div className="study-header">
           <div className="study-header-actions">
-            <button onClick={() => setScreen('study-select')}>학습 선택</button>
+            <button onClick={() => setStudyModalOpen(true)}>학습 선택</button>
             <button onClick={() => moveFlashcard(-1)} disabled={flashIndex <= 0 || wordPickerOpen || done}>
               이전
             </button>
@@ -2135,12 +2313,21 @@ function App() {
                         style={{ width: `${unit.width}px` }}
                         value={answersById[unit.blankId] ?? ''}
                         readOnly={Boolean(currentGrade)}
+                        title={currentGrade ? '클릭하면 정답/오답을 바꿉니다.' : undefined}
+                        aria-label={
+                          currentGrade
+                            ? `${unit.answer} 정답 오답 전환`
+                            : `${unit.answer.length}글자 빈칸`
+                        }
                         onChange={(event) =>
                           setAnswersById((prev) => ({
                             ...prev,
                             [unit.blankId]: event.target.value,
                           }))
                         }
+                        onClick={() => {
+                          if (currentGrade) void toggleBlankGrade(unit)
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') {
                             event.preventDefault()
@@ -2150,7 +2337,7 @@ function App() {
                       />
                       {unit.suffix}
                       {currentGrade && !currentGrade.checkedById[unit.blankId] && (
-                        <small>{unit.answer}</small>
+                        <small onClick={() => void toggleBlankGrade(unit)}>{unit.answer}</small>
                       )}
                     </span>
                   )
@@ -2168,7 +2355,7 @@ function App() {
                 </button>
                 <button
                   onClick={() => {
-                    void saveCurrentDictationProgress().then(() => setScreen('study-select'))
+                    void saveCurrentDictationProgress().then(() => setScreen('script'))
                   }}
                 >
                   나가기
