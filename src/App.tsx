@@ -9,6 +9,7 @@ type Screen =
   | 'script'
   | 'flashcard'
   | 'dictation'
+  | 'result'
   | 'auth'
 
 type QuizItem = {
@@ -68,6 +69,7 @@ type ActiveQuizRecord = {
 type RouteTarget = {
   scriptId: string | null
   screen: Screen
+  sessionId?: string
 }
 
 type LearningStore = {
@@ -217,12 +219,12 @@ const STOP_WORDS = new Set([
 
 const BRAND_LINKS = [
   {
-    label: '몰입 스터디',
-    href: import.meta.env.VITE_MOLIP_STUDY_URL ?? 'https://molipstudy.com',
+    label: '몰입 타이머',
+    href: import.meta.env.VITE_MOLIP_TIMER_URL ?? 'https://timer.molip.kro.kr',
   },
   {
     label: '몰입 보카',
-    href: import.meta.env.VITE_MOLIP_VOCA_URL ?? 'https://molipvoca.com',
+    href: import.meta.env.VITE_MOLIP_VOCA_URL ?? 'https://voca.molip.kro.kr',
   },
 ]
 
@@ -278,21 +280,27 @@ const renderHighlightedSentence = (english: string, weakWords: Set<string>) =>
   })
 
 const parseAppPath = (pathname: string): RouteTarget => {
-  const [scriptId = '', mode = ''] = pathname.split('/').filter(Boolean).map(decodeURIComponent)
+  const [scriptId = '', mode = '', id = ''] = pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (!scriptId) return { scriptId: null, screen: 'home' }
   if (mode === 'flashcard') return { scriptId, screen: 'flashcard' }
   if (mode === 'dictation') return { scriptId, screen: 'dictation' }
+  if (mode === 'result' && id) return { scriptId, screen: 'result', sessionId: id }
   return { scriptId, screen: 'script' }
 }
 
-const pathForScreen = (screen: Screen, scriptId: string | null) => {
+const pathForScreen = (screen: Screen, scriptId: string | null, sessionId?: string | null) => {
   if (!scriptId) return '/'
   const encodedId = encodeURIComponent(scriptId)
   if (screen === 'flashcard') return `/${encodedId}/flashcard`
   if (screen === 'dictation') return `/${encodedId}/dictation`
+  if (screen === 'result' && sessionId) return `/${encodedId}/result/${encodeURIComponent(sessionId)}`
   if (screen === 'script') return `/${encodedId}`
   return '/'
 }
+
+const formatPercent = (value: number) => `${Math.round(value)}%`
+
+const dictationModeLabel = (mode: string) => (mode === 'weak' ? '취약 문장' : '전체 받아쓰기')
 
 const extractWords = (english: string) =>
   Array.from(
@@ -339,16 +347,21 @@ const makeDictationQuestion = (
   item: QuizItem,
   sourceIndex: number,
   weakWords: Set<string>,
+  blankPercent: number,
 ): DictationQuestion => {
   const tokens = item.english.split(/\s+/).filter(Boolean)
   const candidateIndexes = tokens
-    .map((token, index) => ({ index, core: normalizeWord(token) }))
-    .filter(({ core }) => core.length > 1 && !STOP_WORDS.has(core))
+    .map((token, index) => ({ index, core: parseTokenParts(token).core }))
+    .filter(({ core }) => core.length > 0)
   const weakIndexes = candidateIndexes
-    .filter(({ core }) => weakWords.has(core))
+    .filter(({ core }) => weakWords.has(normalizeWord(core)))
     .map(({ index }) => index)
   const randomIndexes = candidateIndexes.map(({ index }) => index)
-  const targetCount = clamp(Math.ceil(tokens.length * 0.32), 1, Math.max(1, tokens.length))
+  const targetCount = clamp(
+    Math.ceil(candidateIndexes.length * (blankPercent / 100)),
+    1,
+    Math.max(1, candidateIndexes.length),
+  )
   const selected = new Set<number>(weakIndexes)
 
   if (selected.size < targetCount) {
@@ -556,6 +569,8 @@ function App() {
   const [syncError, setSyncError] = useState('')
 
   const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const [detailedResultSessionId, setDetailedResultSessionId] = useState<string | null>(null)
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftRawText, setDraftRawText] = useState('')
@@ -564,6 +579,7 @@ function App() {
   const [studyModalOpen, setStudyModalOpen] = useState(false)
   const [studyKind, setStudyKind] = useState<'flashcard' | 'dictation'>('flashcard')
   const [weakOnly, setWeakOnly] = useState(false)
+  const [dictationBlankPercent, setDictationBlankPercent] = useState(30)
   const [trackFlashWords, setTrackFlashWords] = useState(true)
   const [flashQueue, setFlashQueue] = useState<number[]>([])
   const [flashIndex, setFlashIndex] = useState(0)
@@ -583,6 +599,12 @@ function App() {
   const hasAppliedInitialRoute = useRef(false)
 
   const selectedScript = store.scripts.find((script) => script.id === selectedScriptId) ?? null
+  const selectedScriptSessions = selectedScript
+    ? store.dictationSessions.filter((session) => session.scriptId === selectedScript.id)
+    : []
+  const selectedResultSession =
+    selectedScriptSessions.find((session) => session.id === selectedSessionId) ??
+    (screen === 'result' ? selectedScriptSessions[0] ?? null : null)
   const selectedItems = useMemo(
     () => (selectedScript ? parseItems(selectedScript.rawText) : []),
     [selectedScript],
@@ -678,6 +700,8 @@ function App() {
       setHasLoadedStore(false)
       hasAppliedInitialRoute.current = false
       setSelectedScriptId(null)
+      setSelectedSessionId(null)
+      setDetailedResultSessionId(null)
       setScreen(nextUser ? 'home' : 'auth')
     })
 
@@ -696,27 +720,30 @@ function App() {
     if (!target.scriptId) return
     if (!store.scripts.some((script) => script.id === target.scriptId)) return
     setSelectedScriptId(target.scriptId)
+    setSelectedSessionId(target.sessionId ?? null)
     setScreen(target.screen)
   }, [hasLoadedStore, isLoadingStore, store.scripts, user])
 
   useEffect(() => {
     if (!user || screen === 'auth' || screen === 'editor') return
     if (!hasAppliedInitialRoute.current) return
-    const nextPath = pathForScreen(screen, selectedScriptId)
+    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId)
     if (window.location.pathname !== nextPath) {
       window.history.pushState(null, '', nextPath)
     }
-  }, [screen, selectedScriptId, user])
+  }, [screen, selectedScriptId, selectedSessionId, user])
 
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
       if (!target.scriptId) {
         setSelectedScriptId(null)
+        setSelectedSessionId(null)
         setScreen('home')
         return
       }
       setSelectedScriptId(target.scriptId)
+      setSelectedSessionId(target.sessionId ?? null)
       setScreen(target.screen)
     }
     window.addEventListener('popstate', handlePopState)
@@ -879,8 +906,16 @@ function App() {
 
   const openScript = (scriptId: string) => {
     setSelectedScriptId(scriptId)
+    setSelectedSessionId(null)
     touchScript(scriptId)
     setScreen('script')
+  }
+
+  const openDictationResult = (session: DictationSessionRecord) => {
+    setSelectedScriptId(session.scriptId)
+    setSelectedSessionId(session.id)
+    touchScript(session.scriptId)
+    setScreen('result')
   }
 
   const openEditor = (script?: ScriptRecord) => {
@@ -1348,13 +1383,14 @@ function App() {
     const sourceIndexes =
       mode === 'weak' ? weakIndexesForSelected() : selectedItems.map((_, index) => index)
     const questions = sourceIndexes.map((index) =>
-      makeDictationQuestion(selectedItems[index], index, weakWords),
+      makeDictationQuestion(selectedItems[index], index, weakWords, dictationBlankPercent),
     )
     const initialAnswers = createAnswers(questions)
     setDictationMode(mode)
     setDictationQuestions(questions)
     setAnswersById(initialAnswers)
     setGradesByIndex({})
+    setDetailedResultSessionId(null)
     setDictationIndex(0)
     void upsertActiveDictation(selectedScript.id, mode, {
       questions,
@@ -1413,7 +1449,7 @@ function App() {
   }
 
   const saveDictationSession = async () => {
-    if (!supabase || !user || !selectedScript) return
+    if (!supabase || !user || !selectedScript) return null
     const grades = Object.values(gradesByIndex)
     const wrongWords = Array.from(new Set(grades.flatMap((grade) => grade.wrongWords)))
     const session: DictationSessionRecord = {
@@ -1442,6 +1478,7 @@ function App() {
       wrong_words: session.wrongWords,
     })
     if (error) setSyncError(`받아쓰기 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+    return session
   }
 
   const deleteDictationSession = async (session: DictationSessionRecord) => {
@@ -1507,14 +1544,23 @@ function App() {
         },
       }
     })
+    if (selectedSessionId === session.id) {
+      setSelectedSessionId(null)
+      setScreen('script')
+    }
   }
 
   const goNextDictation = async () => {
     if (!currentQuestion || !currentGrade) return
     if (dictationIndex >= dictationQuestions.length - 1) {
       setDictationIndex(dictationQuestions.length)
-      await saveDictationSession()
+      const session = await saveDictationSession()
       if (selectedScript) await deleteActiveDictation(selectedScript.id)
+      if (session) {
+        setSelectedSessionId(session.id)
+        setDetailedResultSessionId(session.id)
+        setScreen('result')
+      }
       return
     }
     const nextIndex = dictationIndex + 1
@@ -1910,7 +1956,23 @@ function App() {
                     X 선택 후 어려운 단어 기록
                   </label>
                 ) : (
-                  <p className="setting-note">틀린 문장과 단어를 기록하고 취약 단어를 우선 빈칸 처리합니다.</p>
+                  <>
+                    <label className="slider-field">
+                      <span>
+                        빈칸 비율
+                        <strong>{dictationBlankPercent}%</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min="30"
+                        max="100"
+                        step="10"
+                        value={dictationBlankPercent}
+                        onChange={(event) => setDictationBlankPercent(Number(event.target.value))}
+                      />
+                    </label>
+                    <p className="setting-note">틀린 문장과 단어를 기록하고 취약 단어를 우선 빈칸 처리합니다.</p>
+                  </>
                 )}
               </div>
 
@@ -2008,9 +2070,6 @@ function App() {
   }
 
   if (screen === 'script' && selectedScript) {
-    const sessions = store.dictationSessions
-      .filter((session) => session.scriptId === selectedScript.id)
-      .slice(0, 4)
     const weakWords = new Set(
       selectedWordStats.filter((stat) => stat.wrongCount > 0).map((stat) => stat.word),
     )
@@ -2055,6 +2114,50 @@ function App() {
           </section>
         )}
 
+        <section className="body-panel quiz-history-panel">
+          <div className="panel-top">
+            <div>
+              <p className="eyebrow">Quiz History</p>
+              <h2>퀴즈 내역</h2>
+            </div>
+            <span className="panel-count">{selectedScriptSessions.length}개</span>
+          </div>
+          {selectedScriptSessions.length ? (
+            <div className="quiz-history-list">
+              {selectedScriptSessions.map((session) => {
+                const accuracy =
+                  session.totalQuestions > 0
+                    ? (session.correctQuestions / session.totalQuestions) * 100
+                    : 0
+                return (
+                  <button
+                    className="quiz-history-row"
+                    key={session.id}
+                    onClick={() => openDictationResult(session)}
+                  >
+                    <span className="quiz-history-main">
+                      <strong>{formatDateTime(session.createdAt)}</strong>
+                      <small>
+                        {dictationModeLabel(session.mode)} · 정답률 {formatPercent(accuracy)}
+                      </small>
+                    </span>
+                    <span className="quiz-history-stats">
+                      <em>{session.correctQuestions}/{session.totalQuestions}</em>
+                      <small>오답 {session.wrongQuestions} · 단어 {session.wrongWords.length}</small>
+                    </span>
+                    <span className="row-arrow">›</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="empty-state slim">
+              <h2>아직 퀴즈 기록이 없습니다.</h2>
+              <p>받아쓰기를 완료하면 이곳에 결과가 쌓입니다.</p>
+            </div>
+          )}
+        </section>
+
         <section className="body-panel">
           <div className="panel-top">
             <h2>스크립트 본문</h2>
@@ -2080,27 +2183,144 @@ function App() {
             })}
           </div>
         </section>
+      </section>,
+    )
+  }
 
-        {!!sessions.length && (
+  if (screen === 'result' && selectedScript) {
+    if (!selectedResultSession) {
+      return shell(
+        <section className="result-page">
+          <div className="empty-state">
+            <h2>퀴즈 결과를 찾을 수 없습니다.</h2>
+            <p>삭제되었거나 아직 저장된 받아쓰기 기록이 없습니다.</p>
+            <button className="primary-btn" onClick={() => setScreen('script')}>
+              스크립트로 돌아가기
+            </button>
+          </div>
+        </section>,
+      )
+    }
+
+    const accuracy =
+      selectedResultSession.totalQuestions > 0
+        ? (selectedResultSession.correctQuestions / selectedResultSession.totalQuestions) * 100
+        : 0
+    const canShowSentenceDetails =
+      detailedResultSessionId === selectedResultSession.id &&
+      dictationQuestions.length === selectedResultSession.totalQuestions
+    const finalWrongIndexes = canShowSentenceDetails
+      ? dictationQuestions
+          .map((_, index) => index)
+          .filter((index) => {
+            const grade = gradesByIndex[index]
+            return grade && grade.correct < grade.total
+          })
+      : []
+
+    return shell(
+      <section className="result-page">
+        <section className="result-hero">
+          <div>
+            <button className="text-btn" onClick={() => setScreen('script')}>
+              스크립트로
+            </button>
+            <p className="eyebrow">Quiz Result</p>
+            <h1>받아쓰기 결과</h1>
+            <p>
+              {selectedScript.title} · {dictationModeLabel(selectedResultSession.mode)} ·{' '}
+              {formatDateTime(selectedResultSession.createdAt)}
+            </p>
+          </div>
+          <div className="score-ring" aria-label={`정답률 ${formatPercent(accuracy)}`}>
+            <span>{formatPercent(accuracy)}</span>
+            <small>정답률</small>
+          </div>
+        </section>
+
+        <section className="result-widgets" aria-label="퀴즈 요약">
+          <article className="result-widget score">
+            <span>점수</span>
+            <strong>
+              {selectedResultSession.correctQuestions}/{selectedResultSession.totalQuestions}
+            </strong>
+            <small>맞힌 문장</small>
+          </article>
+          <article className="result-widget">
+            <span>틀린 문장</span>
+            <strong>{selectedResultSession.wrongQuestions}</strong>
+            <small>다시 확인할 문장</small>
+          </article>
+          <article className="result-widget">
+            <span>틀린 단어</span>
+            <strong>{selectedResultSession.wrongWords.length}</strong>
+            <small>기록된 취약 단어</small>
+          </article>
+        </section>
+
+        <section className="body-panel result-progress-panel">
+          <div className="panel-top">
+            <h2>학습 요약</h2>
+            <strong>{formatPercent(accuracy)}</strong>
+          </div>
+          <div className="result-meter" aria-hidden="true">
+            <span style={{ width: `${accuracy}%` }} />
+          </div>
+          <p>
+            총 {selectedResultSession.totalQuestions}문장 중 {selectedResultSession.correctQuestions}문장을 맞혔고,
+            {selectedResultSession.wrongQuestions}문장은 다시 연습이 필요합니다.
+          </p>
+        </section>
+
+        <section className="body-panel">
+          <div className="panel-top">
+            <h2>틀린 단어</h2>
+            <span className="panel-count">{selectedResultSession.wrongWords.length}개</span>
+          </div>
+          {selectedResultSession.wrongWords.length ? (
+            <div className="wrong-word-cloud">
+              {selectedResultSession.wrongWords.map((word) => (
+                <span key={word}>{word}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">기록된 틀린 단어가 없습니다.</p>
+          )}
+        </section>
+
+        {!!finalWrongIndexes.length && (
           <section className="body-panel">
             <div className="panel-top">
-              <h2>최근 받아쓰기</h2>
+              <h2>틀린 문장</h2>
+              <span className="panel-count">{finalWrongIndexes.length}개</span>
             </div>
-            <div className="session-list">
-              {sessions.map((session) => (
-                <div className="session-row" key={session.id}>
-                  <p>
-                    {formatDateTime(session.createdAt)} · 정답 {session.correctQuestions} · 오답{' '}
-                    {session.wrongQuestions}
-                  </p>
-                  <button className="danger-btn" onClick={() => void deleteDictationSession(session)}>
-                    삭제
-                  </button>
-                </div>
-              ))}
+            <div className="wrong-list polished">
+              {finalWrongIndexes.map((index) => {
+                const question = dictationQuestions[index]
+                const grade = gradesByIndex[index]
+                return (
+                  <article key={question.sentenceKey}>
+                    <strong>
+                      {question.item.number}. {question.item.meaning}
+                    </strong>
+                    <p>{questionSentence(question)}</p>
+                    <small>틀린 단어: {grade.wrongWords.join(', ')}</small>
+                  </article>
+                )
+              })}
             </div>
           </section>
         )}
+
+        <div className="result-actions">
+          <button className="primary-btn" onClick={() => startDictation('weak')}>
+            취약 문장 재시험
+          </button>
+          <button onClick={() => setScreen('script')}>스크립트 보기</button>
+          <button className="danger-btn" onClick={() => void deleteDictationSession(selectedResultSession)}>
+            결과 삭제
+          </button>
+        </div>
       </section>,
     )
   }
