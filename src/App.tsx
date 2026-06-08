@@ -167,6 +167,11 @@ type ActiveDictationState = {
   currentIndex: number
 }
 
+type DictationSessionDetail = {
+  questions: DictationQuestion[]
+  gradesByIndex: Record<string, DictationGrade>
+}
+
 const STOP_WORDS = new Set([
   'a',
   'an',
@@ -232,6 +237,7 @@ const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).sl
 const nowIso = () => new Date().toISOString()
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const normalizeLoginId = (value: string) => value.trim().toLowerCase()
+const sessionDetailStorageKey = (sessionId: string) => `molip-script:dictation-detail:${sessionId}`
 
 const isValidLoginId = (value: string) => /^[a-z0-9][a-z0-9._-]{2,31}$/.test(value)
 
@@ -911,9 +917,51 @@ function App() {
     setScreen('script')
   }
 
+  const saveDictationSessionDetail = (
+    sessionId: string,
+    questions: DictationQuestion[],
+    grades: Record<number, DictationGrade>,
+  ) => {
+    const detail: DictationSessionDetail = {
+      questions,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(grades).map(([index, grade]) => [String(index), grade]),
+      ),
+    }
+    localStorage.setItem(sessionDetailStorageKey(sessionId), JSON.stringify(detail))
+  }
+
+  const loadDictationSessionDetail = (session: DictationSessionRecord) => {
+    const raw = localStorage.getItem(sessionDetailStorageKey(session.id))
+    if (!raw) return false
+    try {
+      const detail = JSON.parse(raw) as DictationSessionDetail
+      if (!Array.isArray(detail.questions) || detail.questions.length !== session.totalQuestions) {
+        return false
+      }
+      setDictationMode(session.mode === 'weak' ? 'weak' : 'standard')
+      setDictationQuestions(detail.questions)
+      setAnswersById(createAnswers(detail.questions))
+      setGradesByIndex(
+        Object.fromEntries(
+          Object.entries(detail.gradesByIndex ?? {}).map(([index, grade]) => [Number(index), grade]),
+        ),
+      )
+      setDictationIndex(detail.questions.length)
+      setDetailedResultSessionId(session.id)
+      return true
+    } catch {
+      localStorage.removeItem(sessionDetailStorageKey(session.id))
+      return false
+    }
+  }
+
   const openDictationResult = (session: DictationSessionRecord) => {
     setSelectedScriptId(session.scriptId)
     setSelectedSessionId(session.id)
+    if (!loadDictationSessionDetail(session)) {
+      setDetailedResultSessionId(null)
+    }
     touchScript(session.scriptId)
     setScreen('result')
   }
@@ -1371,7 +1419,7 @@ function App() {
     setScreen('dictation')
   }
 
-  const startDictation = (mode: 'standard' | 'weak') => {
+  const startDictation = (mode: 'standard' | 'weak', retrySourceIndexes?: number[]) => {
     if (!selectedScript || !selectedItems.length) return
     setStudyModalOpen(false)
     const weakWords = new Set(
@@ -1381,7 +1429,9 @@ function App() {
         .map((stat) => stat.word),
     )
     const sourceIndexes =
-      mode === 'weak' ? weakIndexesForSelected() : selectedItems.map((_, index) => index)
+      retrySourceIndexes ??
+      (mode === 'weak' ? weakIndexesForSelected() : selectedItems.map((_, index) => index))
+    if (!sourceIndexes.length) return
     const questions = sourceIndexes.map((index) =>
       makeDictationQuestion(selectedItems[index], index, weakWords, dictationBlankPercent),
     )
@@ -1400,6 +1450,17 @@ function App() {
     })
     touchScript(selectedScript.id)
     setScreen('dictation')
+  }
+
+  const retryWrongDictation = (wrongQuestionIndexes: number[]) => {
+    const retrySourceIndexes = Array.from(
+      new Set(
+        wrongQuestionIndexes
+          .map((index) => dictationQuestions[index]?.sourceIndex)
+          .filter((index): index is number => typeof index === 'number'),
+      ),
+    )
+    startDictation('weak', retrySourceIndexes)
   }
 
   useEffect(() => {
@@ -1466,6 +1527,7 @@ function App() {
       ...prev,
       dictationSessions: [session, ...prev.dictationSessions],
     }))
+    saveDictationSessionDetail(session.id, dictationQuestions, gradesByIndex)
     const { error } = await supabase.from('dictation_sessions').insert({
       id: session.id,
       owner_id: user.id,
@@ -1548,6 +1610,7 @@ function App() {
       setSelectedSessionId(null)
       setScreen('script')
     }
+    localStorage.removeItem(sessionDetailStorageKey(session.id))
   }
 
   const goNextDictation = async () => {
@@ -2313,8 +2376,12 @@ function App() {
         )}
 
         <div className="result-actions">
-          <button className="primary-btn" onClick={() => startDictation('weak')}>
-            취약 문장 재시험
+          <button
+            className="primary-btn"
+            onClick={() => retryWrongDictation(finalWrongIndexes)}
+            disabled={!finalWrongIndexes.length}
+          >
+            {finalWrongIndexes.length ? '틀린 문제 다시 풀기' : '틀린 문제 없음'}
           </button>
           <button onClick={() => setScreen('script')}>스크립트 보기</button>
           <button className="danger-btn" onClick={() => void deleteDictationSession(selectedResultSession)}>
@@ -2493,8 +2560,12 @@ function App() {
               </div>
             )}
             <div className="button-row">
-              <button className="primary-btn" onClick={() => startDictation('weak')}>
-                취약 문장 재시험
+              <button
+                className="primary-btn"
+                onClick={() => retryWrongDictation(finalWrongIndexes)}
+                disabled={!finalWrongIndexes.length}
+              >
+                {finalWrongIndexes.length ? '틀린 문제 다시 풀기' : '틀린 문제 없음'}
               </button>
               <button onClick={() => setScreen('script')}>스크립트로</button>
             </div>
