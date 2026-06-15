@@ -1249,6 +1249,88 @@ function App() {
     if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
   }
 
+  const adjustWordStats = async (
+    scriptId: string,
+    source: 'dictation' | 'flashcard',
+    deltasByWord: Record<string, number>,
+  ) => {
+    if (!supabase || !user) return
+    const client = supabase
+    const deltas = Object.entries(deltasByWord)
+      .map(([word, delta]) => [normalizeWord(word), delta] as const)
+      .filter(([word, delta]) => word && delta !== 0)
+      .reduce<Record<string, number>>((acc, [word, delta]) => {
+        acc[word] = (acc[word] ?? 0) + delta
+        return acc
+      }, {})
+    const entries = Object.entries(deltas).filter(([, delta]) => delta !== 0)
+    if (!entries.length) return
+
+    const timestamp = nowIso()
+    const current = store.wordStatsByScript[scriptId] ?? []
+    const nextCounts = entries.map(([word, delta]) => {
+      const existing = current.find((stat) => stat.word === word && stat.source === source)
+      return { word, wrongCount: (existing?.wrongCount ?? 0) + delta }
+    })
+
+    setStore((prev) => {
+      const bucket = [...(prev.wordStatsByScript[scriptId] ?? [])]
+      nextCounts.forEach(({ word, wrongCount }) => {
+        const targetIndex = bucket.findIndex(
+          (stat) => stat.word === word && stat.source === source,
+        )
+        if (wrongCount <= 0) {
+          if (targetIndex >= 0) bucket.splice(targetIndex, 1)
+          return
+        }
+        const nextStat: WordStat = {
+          word,
+          source,
+          wrongCount,
+          lastWrongAt: timestamp,
+        }
+        if (targetIndex >= 0) bucket[targetIndex] = nextStat
+        else bucket.push(nextStat)
+      })
+      return {
+        ...prev,
+        wordStatsByScript: {
+          ...prev.wordStatsByScript,
+          [scriptId]: bucket,
+        },
+      }
+    })
+
+    await Promise.all(
+      nextCounts.map(async ({ word, wrongCount }) => {
+        if (wrongCount <= 0) {
+          const { error } = await client
+            .from('word_stats')
+            .delete()
+            .eq('script_id', scriptId)
+            .eq('word', word)
+            .eq('source', source)
+          if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+          return
+        }
+
+        const { error } = await client.from('word_stats').upsert(
+          {
+            owner_id: user.id,
+            script_id: scriptId,
+            word,
+            source,
+            wrong_count: wrongCount,
+            last_wrong_at: timestamp,
+            updated_at: timestamp,
+          },
+          { onConflict: 'owner_id,script_id,word,source' },
+        )
+        if (error) setSyncError(`단어 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+      }),
+    )
+  }
+
   const weakIndexesForSelected = () => {
     const weakKeys = new Set(
       Object.values(selectedStats)
@@ -1484,6 +1566,18 @@ function App() {
     if (!currentQuestion || currentGrade || !selectedScript) return
     const grade = gradeQuestion(currentQuestion, answersById)
     const nextGrades = { ...gradesByIndex, [dictationIndex]: grade }
+    const wordDeltas = collectBlanks(currentQuestion).reduce<Record<string, number>>((acc, blank) => {
+      const word = normalizeWord(blank.answer)
+      if (!word) return acc
+      const isCorrect = Boolean(grade.checkedById[blank.blankId])
+      const alreadyTracked = selectedWordStats.some(
+        (stat) => stat.source === 'dictation' && stat.word === word && stat.wrongCount > 0,
+      )
+      if (!isCorrect || alreadyTracked) {
+        acc[word] = (acc[word] ?? 0) + (isCorrect ? -1 : 1)
+      }
+      return acc
+    }, {})
     await upsertSentenceStat(
       selectedScript.id,
       currentQuestion.item,
@@ -1491,13 +1585,14 @@ function App() {
       (stat) => ({
         ...stat,
         dictationAttempts: stat.dictationAttempts + 1,
-        dictationWrongCount: stat.dictationWrongCount + (grade.correct < grade.total ? 1 : 0),
+        dictationWrongCount: Math.max(
+          0,
+          stat.dictationWrongCount + (grade.correct < grade.total ? 1 : -1),
+        ),
         lastDictationAt: nowIso(),
       }),
     )
-    if (grade.wrongWords.length) {
-      await recordWords(selectedScript.id, grade.wrongWords, 'dictation')
-    }
+    await adjustWordStats(selectedScript.id, 'dictation', wordDeltas)
     setGradesByIndex(nextGrades)
     await upsertActiveDictation(selectedScript.id, dictationMode, {
       questions: dictationQuestions,
@@ -1620,9 +1715,7 @@ function App() {
       const session = await saveDictationSession()
       if (selectedScript) await deleteActiveDictation(selectedScript.id)
       if (session) {
-        setSelectedSessionId(session.id)
-        setDetailedResultSessionId(session.id)
-        setScreen('result')
+        openDictationResult(session)
       }
       return
     }
@@ -2604,6 +2697,9 @@ function App() {
                         style={{ width: `${unit.width}px` }}
                         value={answersById[unit.blankId] ?? ''}
                         readOnly={Boolean(currentGrade)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         title={currentGrade ? '클릭하면 정답/오답을 바꿉니다.' : undefined}
                         aria-label={
                           currentGrade
