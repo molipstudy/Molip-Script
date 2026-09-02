@@ -33,6 +33,19 @@ create table if not exists molip_script.scripts (
   last_opened_at timestamptz not null default now()
 );
 
+-- Community entries are snapshots. Copying one creates a completely independent
+-- script, and removing this row only cancels community sharing.
+create table if not exists molip_script.community_scripts (
+  id text primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  owner_login_id text not null,
+  source_script_id text not null,
+  title text not null,
+  raw_text text not null,
+  shared_at timestamptz not null default now(),
+  unique (owner_id, source_script_id)
+);
+
 create table if not exists molip_script.dictation_sessions (
   id text primary key,
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -98,6 +111,8 @@ create index if not exists molip_script_profiles_login_id_idx
   on molip_script.profiles (login_id);
 create index if not exists molip_script_scripts_owner_updated_idx
   on molip_script.scripts (owner_id, updated_at desc);
+create index if not exists molip_script_community_shared_idx
+  on molip_script.community_scripts (shared_at desc);
 create index if not exists molip_script_dictation_sessions_owner_created_idx
   on molip_script.dictation_sessions (owner_id, created_at desc);
 create index if not exists molip_script_flashcard_sessions_owner_created_idx
@@ -127,6 +142,7 @@ $$;
 
 alter table molip_script.profiles enable row level security;
 alter table molip_script.scripts enable row level security;
+alter table molip_script.community_scripts enable row level security;
 alter table molip_script.dictation_sessions enable row level security;
 alter table molip_script.flashcard_sessions enable row level security;
 alter table molip_script.sentence_stats enable row level security;
@@ -136,6 +152,9 @@ alter table molip_script.active_quizzes enable row level security;
 drop policy if exists molip_script_profiles_owner_all on molip_script.profiles;
 drop policy if exists molip_script_profiles_owner_select on molip_script.profiles;
 drop policy if exists molip_script_scripts_owner_all on molip_script.scripts;
+drop policy if exists molip_script_community_read on molip_script.community_scripts;
+drop policy if exists molip_script_community_insert on molip_script.community_scripts;
+drop policy if exists molip_script_community_delete on molip_script.community_scripts;
 drop policy if exists molip_script_dictation_sessions_owner_all on molip_script.dictation_sessions;
 drop policy if exists molip_script_flashcard_sessions_owner_all on molip_script.flashcard_sessions;
 drop policy if exists molip_script_sentence_stats_owner_all on molip_script.sentence_stats;
@@ -149,6 +168,28 @@ create policy molip_script_profiles_owner_all
 create policy molip_script_scripts_owner_all
   on molip_script.scripts for all to authenticated
   using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+create policy molip_script_community_read
+  on molip_script.community_scripts for select to authenticated
+  using (true);
+
+create policy molip_script_community_insert
+  on molip_script.community_scripts for insert to authenticated
+  with check (
+    owner_id = auth.uid()
+    and exists (
+      select 1 from molip_script.scripts
+      where scripts.id = source_script_id and scripts.owner_id = auth.uid()
+    )
+    and exists (
+      select 1 from molip_script.profiles
+      where profiles.id = auth.uid() and profiles.login_id = owner_login_id
+    )
+  );
+
+create policy molip_script_community_delete
+  on molip_script.community_scripts for delete to authenticated
+  using (owner_id = auth.uid());
 
 create policy molip_script_dictation_sessions_owner_all
   on molip_script.dictation_sessions for all to authenticated
@@ -174,6 +215,7 @@ grant usage on schema molip_script to anon, authenticated;
 grant execute on function molip_script.email_for_login_id(text) to anon, authenticated;
 grant all on table molip_script.profiles to authenticated;
 grant all on table molip_script.scripts to authenticated;
+grant select, insert, delete on table molip_script.community_scripts to authenticated;
 grant all on table molip_script.dictation_sessions to authenticated;
 grant all on table molip_script.flashcard_sessions to authenticated;
 grant all on table molip_script.sentence_stats to authenticated;

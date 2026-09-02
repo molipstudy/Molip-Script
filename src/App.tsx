@@ -10,6 +10,7 @@ type Screen =
   | 'flashcard'
   | 'dictation'
   | 'result'
+  | 'community'
   | 'auth'
 
 type QuizItem = {
@@ -87,6 +88,26 @@ type ScriptRow = {
   created_at: string
   updated_at: string
   last_opened_at: string
+}
+
+type CommunityScript = {
+  id: string
+  ownerId: string
+  ownerLoginId: string
+  sourceScriptId: string
+  title: string
+  rawText: string
+  sharedAt: string
+}
+
+type CommunityScriptRow = {
+  id: string
+  owner_id: string
+  owner_login_id: string
+  source_script_id: string
+  title: string
+  raw_text: string
+  shared_at: string
 }
 
 type SentenceStatRow = {
@@ -288,6 +309,7 @@ const renderHighlightedSentence = (english: string, weakWords: Set<string>) =>
 const parseAppPath = (pathname: string): RouteTarget => {
   const [scriptId = '', mode = '', id = ''] = pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (!scriptId) return { scriptId: null, screen: 'home' }
+  if (scriptId === 'community') return { scriptId: null, screen: 'community' }
   if (mode === 'flashcard') return { scriptId, screen: 'flashcard' }
   if (mode === 'dictation') return { scriptId, screen: 'dictation' }
   if (mode === 'result' && id) return { scriptId, screen: 'result', sessionId: id }
@@ -295,6 +317,7 @@ const parseAppPath = (pathname: string): RouteTarget => {
 }
 
 const pathForScreen = (screen: Screen, scriptId: string | null, sessionId?: string | null) => {
+  if (screen === 'community') return '/community'
   if (!scriptId) return '/'
   const encodedId = encodeURIComponent(scriptId)
   if (screen === 'flashcard') return `/${encodedId}/flashcard`
@@ -573,6 +596,11 @@ function App() {
   const [isLoadingStore, setIsLoadingStore] = useState(false)
   const [hasLoadedStore, setHasLoadedStore] = useState(false)
   const [syncError, setSyncError] = useState('')
+  const [communityScripts, setCommunityScripts] = useState<CommunityScript[]>([])
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null)
+  const [sharePickerOpen, setSharePickerOpen] = useState(false)
+  const [communityBusy, setCommunityBusy] = useState(false)
+  const [communityNotice, setCommunityNotice] = useState('')
 
   const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
@@ -625,6 +653,8 @@ function App() {
     () => [...store.scripts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [store.scripts],
   )
+  const selectedCommunityScript =
+    communityScripts.find((script) => script.id === selectedCommunityId) ?? null
   const currentQuestion = dictationQuestions[dictationIndex] ?? null
   const currentGrade = gradesByIndex[dictationIndex]
   const isDictationDone =
@@ -690,6 +720,31 @@ function App() {
     }
   }, [user])
 
+  const loadCommunity = useCallback(async () => {
+    if (!supabase || !user) return
+    const result = await supabase
+      .from('community_scripts')
+      .select('id,owner_id,owner_login_id,source_script_id,title,raw_text,shared_at')
+      .order('shared_at', { ascending: false })
+    if (result.error) {
+      setSyncError(`커뮤니티 불러오기 실패: ${toFriendlyDbError(result.error.message)}`)
+      return
+    }
+    setCommunityScripts(((result.data ?? []) as CommunityScriptRow[]).map((row) => ({
+      id: row.id,
+      ownerId: row.owner_id,
+      ownerLoginId: row.owner_login_id,
+      sourceScriptId: row.source_script_id,
+      title: row.title,
+      rawText: row.raw_text,
+      sharedAt: row.shared_at,
+    })))
+  }, [user])
+
+  useEffect(() => {
+    if (screen === 'community' && user) void loadCommunity()
+  }, [screen, user, loadCommunity])
+
   useEffect(() => {
     if (!supabase) return
     void supabase.auth.getSession().then(({ data }) => {
@@ -723,6 +778,10 @@ function App() {
     if (!user || !hasLoadedStore || isLoadingStore || hasAppliedInitialRoute.current) return
     const target = parseAppPath(window.location.pathname)
     hasAppliedInitialRoute.current = true
+    if (target.screen === 'community') {
+      setScreen('community')
+      return
+    }
     if (!target.scriptId) return
     if (!store.scripts.some((script) => script.id === target.scriptId)) return
     setSelectedScriptId(target.scriptId)
@@ -742,6 +801,12 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
+      if (target.screen === 'community') {
+        setSelectedScriptId(null)
+        setSelectedSessionId(null)
+        setScreen('community')
+        return
+      }
       if (!target.scriptId) {
         setSelectedScriptId(null)
         setSelectedSessionId(null)
@@ -1069,6 +1134,63 @@ function App() {
       setSelectedScriptId(null)
       setScreen('home')
     }
+  }
+
+  const shareScript = async (script: ScriptRecord) => {
+    if (!supabase || !user) return
+    setCommunityBusy(true)
+    setCommunityNotice('')
+    const timestamp = nowIso()
+    const { error } = await supabase.from('community_scripts').insert({
+      id: makeId(), owner_id: user.id, owner_login_id: displayLoginId(user),
+      source_script_id: script.id, title: script.title, raw_text: script.rawText, shared_at: timestamp,
+    })
+    if (error) {
+      setSyncError(error.code === '23505' ? '이미 공유 중인 스크립트입니다.' : `공유 실패: ${toFriendlyDbError(error.message)}`)
+    }
+    else {
+      setSharePickerOpen(false)
+      setCommunityNotice('스크립트를 커뮤니티에 공유했습니다.')
+      await loadCommunity()
+    }
+    setCommunityBusy(false)
+  }
+
+  const unshareScript = async (shared: CommunityScript) => {
+    if (!supabase || !user || shared.ownerId !== user.id) return
+    if (!window.confirm('이 스크립트의 커뮤니티 공유를 취소할까요?')) return
+    setCommunityBusy(true)
+    const { error } = await supabase.from('community_scripts').delete().eq('id', shared.id)
+    if (error) setSyncError(`공유 취소 실패: ${toFriendlyDbError(error.message)}`)
+    else {
+      setCommunityScripts((prev) => prev.filter((item) => item.id !== shared.id))
+      setSelectedCommunityId(null)
+      setCommunityNotice('커뮤니티 공유를 취소했습니다. 내 스크립트는 그대로 유지됩니다.')
+    }
+    setCommunityBusy(false)
+  }
+
+  const copyCommunityScript = async (shared: CommunityScript) => {
+    if (!supabase || !user) return
+    setCommunityBusy(true)
+    const timestamp = nowIso()
+    const scriptId = makeId()
+    const { error } = await supabase.from('scripts').insert({
+      id: scriptId, owner_id: user.id, title: shared.title, raw_text: shared.rawText,
+      created_at: timestamp, updated_at: timestamp, last_opened_at: timestamp,
+    })
+    if (error) setSyncError(`내 계정으로 복사 실패: ${toFriendlyDbError(error.message)}`)
+    else {
+      setStore((prev) => ({ ...prev, scripts: [{
+        id: scriptId, title: shared.title, rawText: shared.rawText, createdAt: timestamp,
+        updatedAt: timestamp, lastOpenedAt: timestamp,
+      }, ...prev.scripts] }))
+      setSelectedScriptId(null)
+      setSelectedCommunityId(null)
+      setCommunityNotice('내 계정에 복사했습니다. 홈에서 학습할 수 있습니다.')
+      setScreen('home')
+    }
+    setCommunityBusy(false)
   }
 
   const upsertSentenceStat = async (
@@ -2009,6 +2131,17 @@ function App() {
         >
           스크립트 추가
         </button>
+        <button
+          className={screen === 'community' ? 'active' : ''}
+          onClick={() => {
+            setSelectedCommunityId(null)
+            setCommunityNotice('')
+            setScreen('community')
+            closeMobileSidebar()
+          }}
+        >
+          커뮤니티
+        </button>
       </nav>
       <details className="brand-links">
         <summary>몰입 스터디 서비스</summary>
@@ -2181,6 +2314,91 @@ function App() {
                 </button>
               )
             })}
+          </div>
+        )}
+      </section>,
+    )
+  }
+
+  if (screen === 'community') {
+    const sharedSourceIds = new Set(
+      communityScripts
+        .filter((script) => script.ownerId === user.id)
+        .map((script) => script.sourceScriptId),
+    )
+    return shell(
+      <section className="community-page">
+        <div className="page-top compact">
+          <div>
+            <p className="eyebrow">Community</p>
+            <h1>커뮤니티 스크립트</h1>
+          </div>
+          <button className="primary-btn" onClick={() => setSharePickerOpen(true)}>
+            스크립트 공유
+          </button>
+        </div>
+        <p className="community-guide">
+          커뮤니티에서는 학습이나 퀴즈를 실행할 수 없습니다. 내 계정으로 복사하면 홈에서 학습할 수 있습니다.
+        </p>
+        {communityNotice && <p className="notice-text">{communityNotice}</p>}
+
+        {selectedCommunityScript ? (
+          <section className="community-preview">
+            <div className="community-preview-top">
+              <button className="text-btn" onClick={() => setSelectedCommunityId(null)}>목록으로</button>
+              <div className="button-row">
+                {selectedCommunityScript.ownerId === user.id && (
+                  <button className="danger-btn" disabled={communityBusy} onClick={() => void unshareScript(selectedCommunityScript)}>
+                    공유 취소
+                  </button>
+                )}
+                <button className="primary-btn" disabled={communityBusy} onClick={() => void copyCommunityScript(selectedCommunityScript)}>
+                  내 계정으로 복사
+                </button>
+              </div>
+            </div>
+            <h2>{selectedCommunityScript.title}</h2>
+            <pre>{selectedCommunityScript.rawText}</pre>
+          </section>
+        ) : communityScripts.length ? (
+          <div className="community-grid">
+            {communityScripts.map((script) => (
+              <button className="community-card" key={script.id} onClick={() => setSelectedCommunityId(script.id)}>
+                <strong>{script.title}</strong>
+                <span>문장 {parseItems(script.rawText).length}개</span>
+                <small>{script.ownerLoginId} · {formatDateTime(script.sharedAt)}</small>
+                {script.ownerId === user.id && <em>내가 공유함</em>}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <h2>아직 공유된 스크립트가 없습니다.</h2>
+            <p>내 스크립트를 공유해 첫 커뮤니티 자료를 만들어 보세요.</p>
+          </div>
+        )}
+
+        {sharePickerOpen && (
+          <div className="modal-backdrop" onClick={() => setSharePickerOpen(false)}>
+            <section className="study-modal share-picker" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div><p className="eyebrow">Share</p><h2>공유할 스크립트 선택</h2></div>
+                <button className="text-btn modal-close" onClick={() => setSharePickerOpen(false)}>닫기</button>
+              </div>
+              {sortedScripts.length ? (
+                <div className="script-list">
+                  {sortedScripts.map((script) => {
+                    const isShared = sharedSourceIds.has(script.id)
+                    return (
+                      <button key={script.id} className="script-row" disabled={isShared || communityBusy} onClick={() => void shareScript(script)}>
+                        <span><strong>{script.title}</strong><small>{isShared ? '이미 공유 중' : `문장 ${parseItems(script.rawText).length}개`}</small></span>
+                        <span className="row-arrow">{isShared ? '✓' : '›'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : <div className="empty-state slim"><p>먼저 홈에서 스크립트를 추가해 주세요.</p></div>}
+            </section>
           </div>
         )}
       </section>,
