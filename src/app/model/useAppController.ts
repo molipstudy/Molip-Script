@@ -372,16 +372,30 @@ export function useAppController() {
 
   useEffect(() => {
     if (screen !== 'dictation' || isDictationDone || studyModalOpen) return
-    const navigateSentence = (event: KeyboardEvent) => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    const navigateDictation = (event: KeyboardEvent) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
       if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
       if (document.querySelector('[role="dialog"]') || document.querySelector('.question-card [aria-busy="true"]')) return
       event.preventDefault()
-      dictationNavigationRef.current(event.key === 'ArrowLeft' ? -1 : 1)
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        dictationNavigationRef.current(event.key === 'ArrowUp' ? -1 : 1)
+        return
+      }
+      if (!currentQuestion) return
+      const blanks = collectBlanks(currentQuestion)
+      const activeIndex = blanks.findIndex((blank) => inputRefs.current[blank.blankId] === document.activeElement)
+      const direction = event.key === 'ArrowLeft' ? -1 : 1
+      const nextIndex = activeIndex < 0
+        ? (direction === 1 ? 0 : blanks.length - 1)
+        : Math.max(0, Math.min(blanks.length - 1, activeIndex + direction))
+      const nextBlank = blanks[nextIndex]
+      const input = nextBlank ? inputRefs.current[nextBlank.blankId] : null
+      input?.focus()
+      input?.select()
     }
-    window.addEventListener('keydown', navigateSentence)
-    return () => window.removeEventListener('keydown', navigateSentence)
-  }, [screen, isDictationDone, studyModalOpen, dictationQuestions.length])
+    window.addEventListener('keydown', navigateDictation)
+    return () => window.removeEventListener('keydown', navigateDictation)
+  }, [screen, isDictationDone, studyModalOpen, currentQuestion])
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' })
