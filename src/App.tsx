@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase, supabaseSchema } from './supabase'
 import './App.css'
+import { Icon, IconButton, AsyncButton, Progress, StudyTip, Modal, LoadingSkeleton } from './ui'
 
 type Screen =
   | 'home'
   | 'editor'
   | 'script'
+  | 'history'
   | 'flashcard'
   | 'dictation'
   | 'result'
   | 'community'
+  | 'profile'
   | 'auth'
 
 type QuizItem = {
@@ -71,6 +74,7 @@ type RouteTarget = {
   scriptId: string | null
   screen: Screen
   sessionId?: string
+  communityId?: string
 }
 
 type LearningStore = {
@@ -309,17 +313,21 @@ const renderHighlightedSentence = (english: string, weakWords: Set<string>) =>
 const parseAppPath = (pathname: string): RouteTarget => {
   const [scriptId = '', mode = '', id = ''] = pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (!scriptId) return { scriptId: null, screen: 'home' }
-  if (scriptId === 'community') return { scriptId: null, screen: 'community' }
+  if (scriptId === 'profile') return { scriptId: null, screen: 'profile' }
+  if (scriptId === 'community') return { scriptId: null, screen: 'community', communityId: mode || undefined }
+  if (mode === 'history') return { scriptId, screen: 'history' }
   if (mode === 'flashcard') return { scriptId, screen: 'flashcard' }
   if (mode === 'dictation') return { scriptId, screen: 'dictation' }
   if (mode === 'result' && id) return { scriptId, screen: 'result', sessionId: id }
   return { scriptId, screen: 'script' }
 }
 
-const pathForScreen = (screen: Screen, scriptId: string | null, sessionId?: string | null) => {
-  if (screen === 'community') return '/community'
+const pathForScreen = (screen: Screen, scriptId: string | null, sessionId?: string | null, communityId?: string | null) => {
+  if (screen === 'profile') return '/profile'
+  if (screen === 'community') return communityId ? `/community/${encodeURIComponent(communityId)}` : '/community'
   if (!scriptId) return '/'
   const encodedId = encodeURIComponent(scriptId)
+  if (screen === 'history') return `/${encodedId}/history`
   if (screen === 'flashcard') return `/${encodedId}/flashcard`
   if (screen === 'dictation') return `/${encodedId}/dictation`
   if (screen === 'result' && sessionId) return `/${encodedId}/result/${encodeURIComponent(sessionId)}`
@@ -410,7 +418,7 @@ const makeDictationQuestion = (
       prefix,
       suffix,
       answer: core,
-      width: Math.max(96, Math.min(340, core.length * 24 + 28)),
+      width: Math.max(72, Math.min(240, core.length * 13 + 24)),
     }
   })
 
@@ -599,6 +607,10 @@ function App() {
   const [communityScripts, setCommunityScripts] = useState<CommunityScript[]>([])
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null)
   const [sharePickerOpen, setSharePickerOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [communityQuery, setCommunityQuery] = useState('')
+  const [communityLoading, setCommunityLoading] = useState(false)
+  const [showMeaning, setShowMeaning] = useState(true)
   const [communityBusy, setCommunityBusy] = useState(false)
   const [communityNotice, setCommunityNotice] = useState('')
 
@@ -622,7 +634,6 @@ function App() {
   const [wordPickerOpen, setWordPickerOpen] = useState(false)
   const [pendingFlashIndex, setPendingFlashIndex] = useState<number | null>(null)
   const [selectedWords, setSelectedWords] = useState<Set<string>>(() => new Set())
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
 
   const [dictationQuestions, setDictationQuestions] = useState<DictationQuestion[]>([])
   const [answersById, setAnswersById] = useState<Record<string, string>>({})
@@ -722,6 +733,8 @@ function App() {
 
   const loadCommunity = useCallback(async () => {
     if (!supabase || !user) return
+    setCommunityLoading(true)
+    try {
     const result = await supabase
       .from('community_scripts')
       .select('id,owner_id,owner_login_id,source_script_id,title,raw_text,shared_at')
@@ -739,6 +752,9 @@ function App() {
       rawText: row.raw_text,
       sharedAt: row.shared_at,
     })))
+    } catch {
+      setSyncError('커뮤니티를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+    } finally { setCommunityLoading(false) }
   }, [user])
 
   useEffect(() => {
@@ -778,7 +794,9 @@ function App() {
     if (!user || !hasLoadedStore || isLoadingStore || hasAppliedInitialRoute.current) return
     const target = parseAppPath(window.location.pathname)
     hasAppliedInitialRoute.current = true
+    if (target.screen === 'profile') { setScreen('profile'); return }
     if (target.screen === 'community') {
+      setSelectedCommunityId(target.communityId ?? null)
       setScreen('community')
       return
     }
@@ -792,18 +810,20 @@ function App() {
   useEffect(() => {
     if (!user || screen === 'auth' || screen === 'editor') return
     if (!hasAppliedInitialRoute.current) return
-    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId)
+    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId, selectedCommunityId)
     if (window.location.pathname !== nextPath) {
       window.history.pushState(null, '', nextPath)
     }
-  }, [screen, selectedScriptId, selectedSessionId, user])
+  }, [screen, selectedScriptId, selectedSessionId, selectedCommunityId, user])
 
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
+      if (target.screen === 'profile') { setScreen('profile'); return }
       if (target.screen === 'community') {
         setSelectedScriptId(null)
         setSelectedSessionId(null)
+        setSelectedCommunityId(target.communityId ?? null)
         setScreen('community')
         return
       }
@@ -831,6 +851,23 @@ function App() {
     })
     return () => window.cancelAnimationFrame(raf)
   }, [currentQuestion, currentGrade, isDictationDone])
+
+  useEffect(() => {
+    if (screen !== 'dictation' || isDictationDone || studyModalOpen) return
+    const navigateSentence = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
+      if (document.querySelector('[role="dialog"]') || document.querySelector('.question-card [aria-busy="true"]')) return
+      event.preventDefault()
+      setDictationIndex((index) => clamp(index + (event.key === 'ArrowLeft' ? -1 : 1), 0, Math.max(0, dictationQuestions.length - 1)))
+    }
+    window.addEventListener('keydown', navigateSentence)
+    return () => window.removeEventListener('keydown', navigateSentence)
+  }, [screen, isDictationDone, studyModalOpen, dictationQuestions.length])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [screen, selectedCommunityId])
 
   const requireUserId = () => {
     if (!user) throw new Error('로그인이 필요합니다.')
@@ -1667,6 +1704,8 @@ function App() {
     startDictation('weak', retrySourceIndexes)
   }
 
+  const initializeDictationFromRoute = useEffectEvent(() => startDictation('standard'))
+
   useEffect(() => {
     if (screen === 'flashcard' && selectedScript && selectedItems.length && !flashQueue.length) {
       setFlashQueue(selectedItems.map((_, index) => index))
@@ -1680,7 +1719,7 @@ function App() {
       selectedItems.length &&
       !dictationQuestions.length
     ) {
-      startDictation('standard')
+      initializeDictationFromRoute()
     }
   }, [dictationQuestions.length, flashQueue.length, screen, selectedItems, selectedScript])
 
@@ -1863,7 +1902,7 @@ function App() {
   const handleBlankEnter = (blankId: string) => {
     if (!currentQuestion) return
     if (currentGrade) {
-      void goNextDictation()
+      document.querySelector<HTMLButtonElement>('.question-card .primary-btn')?.click()
       return
     }
     const blanks = collectBlanks(currentQuestion)
@@ -1874,7 +1913,7 @@ function App() {
       inputRefs.current[next.blankId]?.select()
       return
     }
-    void gradeCurrent()
+    document.querySelector<HTMLButtonElement>('.question-card .primary-btn')?.click()
   }
 
   const saveCurrentDictationProgress = async () => {
@@ -1887,6 +1926,12 @@ function App() {
       ),
       currentIndex: dictationIndex,
     })
+  }
+
+  const navigateMain = async (nextScreen: 'home' | 'community' | 'profile') => {
+    if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
+    if (nextScreen === 'community') { setSelectedCommunityId(null); setCommunityNotice('') }
+    setScreen(nextScreen)
   }
 
   const toggleBlankGrade = async (blank: BlankUnit) => {
@@ -1959,48 +2004,9 @@ function App() {
   }
 
   if (!isAuthReady || isLoadingStore) {
-    return (
-      <main className="loading-screen">
-        <aside className="loading-sidebar" aria-hidden="true">
-          <div className="loading-brand">
-            <img src="/logo/logo.png" alt="" />
-            <span />
-          </div>
-          <div className="loading-nav-line wide" />
-          <div className="loading-nav-line" />
-          <div className="loading-nav-line short" />
-          <div className="loading-account" />
-        </aside>
-        <section className="loading-workspace" aria-live="polite">
-          <div className="loading-top">
-            <div>
-              <p className="eyebrow">Scripts</p>
-              <h1>내 스크립트</h1>
-            </div>
-            <div className="loading-button" />
-          </div>
-          <div className="loading-grid">
-            <article className="loading-preview main">
-              <span />
-              <strong />
-              <p />
-              <p className="short" />
-            </article>
-            <article className="loading-preview">
-              <span />
-              <strong />
-              <p />
-            </article>
-          </div>
-          <div className="loading-list">
-            <div />
-            <div />
-            <div />
-          </div>
-          <p className="loading-caption">몰입 스크립트를 불러오는 중입니다.</p>
-        </section>
-      </main>
-    )
+    const loadingRoute = parseAppPath(window.location.pathname)
+    const loadingView = loadingRoute.screen === 'community' && loadingRoute.communityId ? 'script' : loadingRoute.screen
+    return <main className="loading-screen"><aside className="loading-sidebar" aria-hidden="true"><div className="loading-brand"><img src="/logo/logo.png" alt="" /><span /></div><div className="loading-nav-line wide" /><div className="loading-nav-line" /><div className="loading-nav-line short" /><div className="loading-account" /></aside><div className="loading-workspace"><LoadingSkeleton view={loadingView} /></div></main>
   }
 
   if (!user || screen === 'auth') {
@@ -2020,7 +2026,7 @@ function App() {
             </div>
           </div>
 
-          <div className="auth-mode-tabs" role="tablist" aria-label="인증 모드">
+          <div className="auth-mode-tabs" role="group" aria-label="인증 모드">
             <button
               className={authMode === 'login' ? 'active' : ''}
               onClick={() => {
@@ -2081,30 +2087,27 @@ function App() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') void handleAuth()
+                if (event.key === 'Enter') event.currentTarget.closest('section')?.querySelector<HTMLButtonElement>('.full-btn')?.click()
               }}
               type="password"
             />
           </label>
           {authError && <p className="error-text">{authError}</p>}
           {authNotice && <p className="notice-text">{authNotice}</p>}
-          <button className="primary-btn full-btn" onClick={() => void handleAuth()}>
+          <AsyncButton className="primary-btn full-btn" onAction={handleAuth}>
             {authMode === 'login' ? '로그인' : '회원가입'}
-          </button>
+          </AsyncButton>
         </section>
       </main>
     )
   }
 
-  const closeMobileSidebar = () => setIsMobileSidebarOpen(false)
-
-  const sidebarContent = (variant: 'desktop' | 'mobile') => (
+  const sidebarContent = () => (
     <>
       <button
         className="brand-button"
         onClick={() => {
-          setScreen('home')
-          closeMobileSidebar()
+          void navigateMain('home')
         }}
       >
         <img src="/logo/logo.png" alt="몰입 스터디" />
@@ -2115,32 +2118,29 @@ function App() {
       </button>
       <nav className="sidebar-nav">
         <button
-          className={screen === 'home' ? 'active' : ''}
+          className={['home', 'script', 'history', 'result', 'flashcard', 'dictation'].includes(screen) ? 'active' : ''}
           onClick={() => {
-            setScreen('home')
-            closeMobileSidebar()
+            void navigateMain('home')
           }}
         >
-          홈
+          <Icon name="home" />내 스크립트
         </button>
         <button
           onClick={() => {
             openEditor()
-            closeMobileSidebar()
           }}
         >
-          스크립트 추가
+          <Icon name="plus" />스크립트 추가
         </button>
         <button
           className={screen === 'community' ? 'active' : ''}
           onClick={() => {
             setSelectedCommunityId(null)
             setCommunityNotice('')
-            setScreen('community')
-            closeMobileSidebar()
+            void navigateMain('community')
           }}
         >
-          커뮤니티
+          <Icon name="users" />커뮤니티
         </button>
       </nav>
       <details className="brand-links">
@@ -2152,77 +2152,64 @@ function App() {
         ))}
       </details>
       <div className="account-box">
-        <p>{displayLoginId(user)}</p>
         <button
-          onClick={() => {
-            closeMobileSidebar()
-            void signOut()
-          }}
+          className={`account-profile ${screen === 'profile' ? 'active' : ''}`}
+          aria-current={screen === 'profile' ? 'page' : undefined}
+          onClick={() => void navigateMain('profile')}
         >
-          로그아웃
+          <span className="avatar">{displayLoginId(user).slice(0, 1).toUpperCase()}</span>
+          <span className="account-copy">
+            <strong>{displayLoginId(user)}</strong>
+            <small>오늘도, 한 문장 더.</small>
+          </span>
+          <Icon name="chevron" />
         </button>
+        <AsyncButton className="account-logout" onAction={signOut}>
+          <Icon name="logout" />로그아웃
+        </AsyncButton>
       </div>
-      {variant === 'mobile' && (
-        <button className="text-btn mobile-sidebar-close" onClick={closeMobileSidebar}>
-          닫기
-        </button>
-      )}
+
     </>
   )
 
   const shell = (content: React.ReactNode) => (
     <div className="app-layout">
-      <aside className="sidebar">{sidebarContent('desktop')}</aside>
-      {isMobileSidebarOpen && (
-        <div className="mobile-sidebar-backdrop" onClick={closeMobileSidebar}>
-          <aside className="mobile-sidebar" onClick={(event) => event.stopPropagation()}>
-            {sidebarContent('mobile')}
-          </aside>
-        </div>
-      )}
-      <main className="workspace">
+      <aside className="sidebar">{sidebarContent()}</aside>
+      <main className={`workspace ${screen === 'flashcard' || screen === 'dictation' ? 'focus-workspace' : ''}`}>
         <header className="mobile-header">
-          <button className="brand-button" onClick={() => setScreen('home')}>
+          <button className="brand-button" onClick={() => void navigateMain('home')}>
             <img src="/logo/logo.png" alt="몰입 스터디" />
             <span>몰입 스크립트</span>
           </button>
-          <button
-            className="hamburger-btn"
-            aria-label="사이드바 열기"
-            onClick={() => setIsMobileSidebarOpen(true)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
+
         </header>
         {syncError && <p className="sync-error">{syncError}</p>}
-        {content}
+        <div className="screen-content" key={screen}>{content}</div>
         {studyModalOpen && selectedScript && (
-          <div className="modal-backdrop" onClick={() => setStudyModalOpen(false)}>
+          <Modal label="학습 설정" onClose={() => setStudyModalOpen(false)}>
             <section className="study-modal" onClick={(event) => event.stopPropagation()}>
               <div className="modal-head">
                 <div>
                   <p className="eyebrow">Study</p>
-                  <h2>학습 선택</h2>
+                  <h2>어떻게 공부할까요?</h2><p className="page-description">{selectedScript.title}</p>
                 </div>
                 <button className="text-btn modal-close" onClick={() => setStudyModalOpen(false)}>
-                  닫기
+                  <Icon name="close" /><span className="sr-only">닫기</span>
                 </button>
               </div>
 
-              <div className="study-type-tabs" role="tablist" aria-label="학습 종류">
+              <div className="study-type-tabs" role="group" aria-label="학습 종류">
                 <button
-                  className={studyKind === 'flashcard' ? 'active' : ''}
+                  aria-pressed={studyKind === 'flashcard'} className={studyKind === 'flashcard' ? 'active' : ''}
                   onClick={() => setStudyKind('flashcard')}
                 >
-                  플래시카드
+                  <Icon name="cards" /><strong>플래시카드</strong><small>떠올리고, 뒤집고, 기억해요</small>
                 </button>
                 <button
-                  className={studyKind === 'dictation' ? 'active' : ''}
+                  aria-pressed={studyKind === 'dictation'} className={studyKind === 'dictation' ? 'active' : ''}
                   onClick={() => setStudyKind('dictation')}
                 >
-                  받아쓰기
+                  <Icon name="pen" /><strong>받아쓰기</strong><small>빈칸을 채우며 정확하게</small>
                 </button>
               </div>
 
@@ -2242,7 +2229,7 @@ function App() {
                       checked={trackFlashWords}
                       onChange={(event) => setTrackFlashWords(event.target.checked)}
                     />
-                    X 선택 후 어려운 단어 기록
+                    ‘다시 연습’ 선택 후 어려운 단어 기록
                   </label>
                 ) : (
                   <>
@@ -2275,11 +2262,26 @@ function App() {
                 {studyKind === 'flashcard' ? '플래시카드 시작' : '받아쓰기 시작'}
               </button>
             </section>
-          </div>
+          </Modal>
         )}
       </main>
+      <nav className="bottom-nav" aria-label="모바일 주요 메뉴">
+        <AsyncButton className={!['community', 'profile'].includes(screen) ? 'active' : ''} aria-current={!['community', 'profile'].includes(screen) ? 'page' : undefined} onAction={() => navigateMain('home')}><Icon name="book" /><span>내 스크립트</span></AsyncButton>
+        <AsyncButton className={screen === 'community' ? 'active' : ''} aria-current={screen === 'community' ? 'page' : undefined} onAction={() => navigateMain('community')}><Icon name="users" /><span>커뮤니티</span></AsyncButton>
+        <AsyncButton className={screen === 'profile' ? 'active' : ''} aria-current={screen === 'profile' ? 'page' : undefined} onAction={() => navigateMain('profile')}><Icon name="profile" /><span>내 정보</span></AsyncButton>
+      </nav>
     </div>
   )
+
+  if (screen === 'profile') {
+    return shell(<section className="profile-page">
+      <div className="page-top"><div><p className="eyebrow">My account</p><h1>내 정보</h1><p className="page-description">나의 학습 공간을 관리해요.</p></div></div>
+      <section className="profile-card"><span className="avatar">{displayLoginId(user).slice(0, 1).toUpperCase()}</span><div><h2>{displayLoginId(user)}</h2><p>{user.email}</p><span className="count-badge">Molip Study</span></div></section>
+      <section className="profile-stats" aria-label="내 학습 기록"><article><Icon name="book" /><strong>{store.scripts.length}</strong><span>내 스크립트</span></article><article><Icon name="history" /><strong>{store.dictationSessions.length}</strong><span>완료한 퀴즈</span></article><article><Icon name="pen" /><strong>{store.activeQuizzes.length}</strong><span>진행 중인 학습</span></article></section>
+      <section className="body-panel profile-services"><h2>몰입 스터디</h2>{BRAND_LINKS.map(link => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><Icon name="arrow" /></a>)}</section>
+      <AsyncButton className="profile-logout" onAction={signOut}><Icon name="logout" />로그아웃</AsyncButton>
+    </section>)
+  }
 
   if (screen === 'home') {
     return shell(
@@ -2287,30 +2289,33 @@ function App() {
         <div className="page-top compact">
           <div>
             <p className="eyebrow">Scripts</p>
-            <h1>내 스크립트</h1>
+            <h1>내 스크립트</h1><p className="page-description">한 문장씩, 나의 영어가 되는 시간.</p>
           </div>
           <button className="primary-btn" onClick={() => openEditor()}>
-            스크립트 추가
+            <Icon name="plus" />스크립트 추가
           </button>
         </div>
+        <div className="library-toolbar"><span className="library-count">내 서재 <strong>{sortedScripts.length}</strong></span><label className="search-field"><Icon name="search" /><input aria-label="내 스크립트 검색" placeholder="스크립트 검색" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />{searchQuery && <IconButton icon="close" label="검색 지우기" onClick={() => setSearchQuery('')} />}</label></div>
+        {!!sortedScripts.length && !sortedScripts.some((script) => script.title.toLowerCase().includes(searchQuery.toLowerCase())) && <div className="empty-state"><Icon name="search" /><h2>검색 결과가 없어요</h2><p>다른 제목으로 검색해 보세요.</p></div>}
         {!sortedScripts.length ? (
           <div className="empty-state">
             <h2>저장된 스크립트가 없습니다.</h2>
-            <p>첫 스크립트를 추가하면 홈에는 스크립트 목록만 표시됩니다.</p>
+            <p>외우고 싶은 문장을 추가하고, 나에게 맞는 방식으로 학습을 시작해 보세요.</p>
           </div>
         ) : (
           <div className="script-list">
-            {sortedScripts.map((script) => {
+            {sortedScripts.filter((script) => script.title.toLowerCase().includes(searchQuery.toLowerCase())).map((script, index) => {
               const itemCount = parseItems(script.rawText).length
               return (
                 <button key={script.id} className="script-row" onClick={() => openScript(script.id)}>
-                  <span>
+                  <span className={`script-cover cover-${index % 3}`}><Icon name="book" /></span>
+                  <span className="script-row-copy">
                     <strong>{script.title}</strong>
                     <small>
                       문장 {itemCount}개 · 최근 수정 {formatDateTime(script.updatedAt)}
                     </small>
                   </span>
-                  <span className="row-arrow">›</span>
+                  <Icon name="chevron" className="row-arrow" />
                 </button>
               )
             })}
@@ -2321,6 +2326,24 @@ function App() {
   }
 
   if (screen === 'community') {
+    if (selectedCommunityId) {
+      if (!selectedCommunityScript) return shell(communityLoading ? <LoadingSkeleton view="script" /> : <section className="empty-state"><h2>공유된 스크립트를 찾을 수 없어요</h2><p>공유가 취소되었거나 삭제된 자료예요.</p><button onClick={() => setSelectedCommunityId(null)}><Icon name="back" />커뮤니티로</button></section>)
+      const communityItems = parseItems(selectedCommunityScript.rawText)
+      const isOwner = selectedCommunityScript.ownerId === user.id
+      return shell(
+        <section className="script-detail-page" key={selectedCommunityId}>
+          <div className="script-hero">
+            <div><button className="text-btn" onClick={() => setSelectedCommunityId(null)}><Icon name="back" />커뮤니티</button><h1>{selectedCommunityScript.title}</h1><p>{selectedCommunityScript.ownerLoginId} · 문장 {communityItems.length}개 · 공유 {formatDateTime(selectedCommunityScript.sharedAt)}</p></div>
+            <div className="script-actions">{isOwner ? <button className="danger-btn" disabled={communityBusy} onClick={() => void unshareScript(selectedCommunityScript)}>{communityBusy ? <span className="spinner" /> : <Icon name="share" />}공유 취소</button> : <button className="primary-btn" disabled={communityBusy} onClick={() => void copyCommunityScript(selectedCommunityScript)}>{communityBusy ? <span className="spinner" /> : <Icon name="copy" />}내 서재에 담기</button>}</div>
+          </div>
+          {communityNotice && <p className="notice-text" role="status">{communityNotice}</p>}
+          {!isOwner && <StudyTip context="community" />}
+          <section className="body-panel"><div className="panel-top"><h2><Icon name="book" />스크립트 본문 <span className="count-badge">{communityItems.length}</span></h2><button className={`reading-toggle ${showMeaning ? 'active' : ''}`} aria-pressed={showMeaning} onClick={() => setShowMeaning(!showMeaning)}><Icon name="eye" />해석</button></div>
+            <div className="script-body">{communityItems.map((item, index) => <article key={`${item.number}-${index}`}><span className="sentence-number">{String(index + 1).padStart(2, '0')}</span>{showMeaning && <p>{item.meaning}</p>}<strong>{item.english}</strong></article>)}</div>
+          </section>
+        </section>,
+      )
+    }
     const sharedSourceIds = new Set(
       communityScripts
         .filter((script) => script.ownerId === user.id)
@@ -2331,47 +2354,29 @@ function App() {
         <div className="page-top compact">
           <div>
             <p className="eyebrow">Community</p>
-            <h1>커뮤니티 스크립트</h1>
+            <h1>함께 공부하는 서재</h1><p className="page-description">좋은 스크립트를 발견하고, 나의 학습으로 이어가세요.</p>
           </div>
           <button className="primary-btn" onClick={() => setSharePickerOpen(true)}>
-            스크립트 공유
+            <Icon name="share" />스크립트 공유
           </button>
         </div>
-        <p className="community-guide">
-          커뮤니티에서는 학습이나 퀴즈를 실행할 수 없습니다. 내 계정으로 복사하면 홈에서 학습할 수 있습니다.
-        </p>
+        <StudyTip context="community" />
+        {<label className="search-field"><Icon name="search" /><input aria-label="커뮤니티 검색" placeholder="제목 또는 공유한 사람 검색" value={communityQuery} onChange={(event) => setCommunityQuery(event.target.value)} />{communityQuery && <IconButton icon="close" label="검색 지우기" onClick={() => setCommunityQuery('')} />}</label>}
         {communityNotice && <p className="notice-text">{communityNotice}</p>}
 
-        {selectedCommunityScript ? (
-          <section className="community-preview">
-            <div className="community-preview-top">
-              <button className="text-btn" onClick={() => setSelectedCommunityId(null)}>목록으로</button>
-              <div className="button-row">
-                {selectedCommunityScript.ownerId === user.id && (
-                  <button className="danger-btn" disabled={communityBusy} onClick={() => void unshareScript(selectedCommunityScript)}>
-                    공유 취소
-                  </button>
-                )}
-                <button className="primary-btn" disabled={communityBusy} onClick={() => void copyCommunityScript(selectedCommunityScript)}>
-                  내 계정으로 복사
-                </button>
-              </div>
-            </div>
-            <h2>{selectedCommunityScript.title}</h2>
-            <pre>{selectedCommunityScript.rawText}</pre>
-          </section>
-        ) : communityScripts.length ? (
+        {communityLoading ? <LoadingSkeleton view="community" compact /> : communityScripts.length ? (
           <div className="community-grid">
-            {communityScripts.map((script) => (
+            {!communityScripts.some((script) => `${script.title} ${script.ownerLoginId}`.toLowerCase().includes(communityQuery.toLowerCase())) && <div className="empty-state"><h2>검색 결과가 없어요</h2><p>다른 제목이나 공유한 사람으로 검색해 보세요.</p></div>}
+            {communityScripts.filter((script) => `${script.title} ${script.ownerLoginId}`.toLowerCase().includes(communityQuery.toLowerCase())).map((script) => (
               <button className="community-card" key={script.id} onClick={() => setSelectedCommunityId(script.id)}>
-                <strong>{script.title}</strong>
+                <span className="community-card-icon"><Icon name="book" /><Icon name="arrow" /></span><strong>{script.title}</strong>
                 <span>문장 {parseItems(script.rawText).length}개</span>
                 <small>{script.ownerLoginId} · {formatDateTime(script.sharedAt)}</small>
                 {script.ownerId === user.id && <em>내가 공유함</em>}
               </button>
             ))}
           </div>
-        ) : (
+        ) : !communityLoading && (
           <div className="empty-state">
             <h2>아직 공유된 스크립트가 없습니다.</h2>
             <p>내 스크립트를 공유해 첫 커뮤니티 자료를 만들어 보세요.</p>
@@ -2379,11 +2384,11 @@ function App() {
         )}
 
         {sharePickerOpen && (
-          <div className="modal-backdrop" onClick={() => setSharePickerOpen(false)}>
+          <Modal label="공유할 스크립트 선택" onClose={() => setSharePickerOpen(false)}>
             <section className="study-modal share-picker" onClick={(event) => event.stopPropagation()}>
               <div className="modal-head">
                 <div><p className="eyebrow">Share</p><h2>공유할 스크립트 선택</h2></div>
-                <button className="text-btn modal-close" onClick={() => setSharePickerOpen(false)}>닫기</button>
+                <button className="text-btn modal-close" onClick={() => setSharePickerOpen(false)} aria-label="닫기"><Icon name="close" /></button>
               </div>
               {sortedScripts.length ? (
                 <div className="script-list">
@@ -2399,7 +2404,7 @@ function App() {
                 </div>
               ) : <div className="empty-state slim"><p>먼저 홈에서 스크립트를 추가해 주세요.</p></div>}
             </section>
-          </div>
+          </Modal>
         )}
       </section>,
     )
@@ -2430,9 +2435,7 @@ function App() {
         </label>
         {draftError && <p className="error-text">{draftError}</p>}
         <div className="button-row">
-          <button className="primary-btn" onClick={() => void saveScript()}>
-            저장
-          </button>
+          <AsyncButton className="primary-btn" onAction={saveScript}><Icon name="check" />저장</AsyncButton>
           {editingScriptId && (
             <button className="danger-btn" onClick={() => void deleteScript(editingScriptId)}>
               삭제
@@ -2452,15 +2455,16 @@ function App() {
         <div className="script-hero">
           <div>
             <button className="text-btn" onClick={() => setScreen('home')}>
-              홈으로
+              <Icon name="back" />내 스크립트
             </button>
             <h1>{selectedScript.title}</h1>
             <p>문장 {selectedItems.length}개 · 최근 열람 {formatDateTime(selectedScript.lastOpenedAt)}</p>
           </div>
           <div className="script-actions">
-            <button onClick={() => openEditor(selectedScript)}>스크립트 수정</button>
+            <IconButton icon="edit" label="스크립트 수정" onClick={() => openEditor(selectedScript)} />
+            <button onClick={() => setScreen('history')}><Icon name="history" />퀴즈 내역 <span className="count-badge">{selectedScriptSessions.length}</span></button>
             <button className="primary-btn jumbo-btn" onClick={() => setStudyModalOpen(true)}>
-              학습하기
+              <Icon name="play" />학습하기
             </button>
           </div>
         </div>
@@ -2481,13 +2485,51 @@ function App() {
             </div>
             <div className="button-row">
               <button className="primary-btn" onClick={() => resumeDictation(selectedActiveQuiz)}>
-                이어하기
+                <Icon name="play" />이어하기
               </button>
-              <button onClick={() => void deleteActiveDictation(selectedScript.id)}>삭제</button>
+              <AsyncButton className="icon-btn" aria-label="진행 중인 받아쓰기 삭제" title="진행 중인 받아쓰기 삭제" onAction={() => deleteActiveDictation(selectedScript.id)}><Icon name="trash" /></AsyncButton>
             </div>
           </section>
         )}
 
+        <StudyTip key="script-tip" context="script" />
+
+        <section className="body-panel">
+          <div className="panel-top">
+            <h2><Icon name="book" />스크립트 본문 <span className="count-badge">{selectedItems.length}</span></h2>
+            <button className={`reading-toggle ${showMeaning ? 'active' : ''}`} aria-pressed={showMeaning} onClick={() => setShowMeaning(!showMeaning)}><Icon name="eye" />해석</button>
+          </div>
+          <div className="script-body">
+            {selectedItems.map((item, index) => {
+              const stat = selectedStats[sentenceKeyOf(item, index)]
+              const isWeakSentence =
+                Boolean(stat) &&
+                (stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
+              return (
+                <article
+                  className={isWeakSentence ? 'weak-sentence' : ''}
+                  key={`${item.number}-${item.english}`}
+                >
+                  <span className="sentence-number">{String(index + 1).padStart(2, '0')}</span>
+                  {showMeaning && <p>
+                    {item.meaning}
+                    {isWeakSentence && <span className="weak-badge">취약</span>}
+                  </p>}
+                  <strong>{renderHighlightedSentence(item.english, weakWords)}</strong>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      </section>,
+    )
+  }
+
+  if (screen === 'history' && selectedScript) {
+    return shell(
+      <section className="history-page">
+        <button className="text-btn back-link" onClick={() => setScreen('script')}><Icon name="back" />{selectedScript.title}</button>
+        <div className="page-top"><div><p className="eyebrow">Your progress</p><h1>퀴즈 내역</h1><p className="page-description">차곡차곡 쌓인 나의 학습 기록</p></div><button className="primary-btn" onClick={() => setStudyModalOpen(true)}><Icon name="play" />새 학습</button></div>
         <section className="body-panel quiz-history-panel">
           <div className="panel-top">
             <div>
@@ -2519,7 +2561,7 @@ function App() {
                       <em>{session.correctQuestions}/{session.totalQuestions}</em>
                       <small>오답 {session.wrongQuestions} · 단어 {session.wrongWords.length}</small>
                     </span>
-                    <span className="row-arrow">›</span>
+                    <Icon name="chevron" className="row-arrow" />
                   </button>
                 )
               })}
@@ -2530,32 +2572,6 @@ function App() {
               <p>받아쓰기를 완료하면 이곳에 결과가 쌓입니다.</p>
             </div>
           )}
-        </section>
-
-        <section className="body-panel">
-          <div className="panel-top">
-            <h2>스크립트 본문</h2>
-          </div>
-          <div className="script-body">
-            {selectedItems.map((item, index) => {
-              const stat = selectedStats[sentenceKeyOf(item, index)]
-              const isWeakSentence =
-                Boolean(stat) &&
-                (stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
-              return (
-                <article
-                  className={isWeakSentence ? 'weak-sentence' : ''}
-                  key={`${item.number}-${item.english}`}
-                >
-                  <p>
-                    {item.number}. {item.meaning}
-                    {isWeakSentence && <span className="weak-badge">취약</span>}
-                  </p>
-                  <strong>{renderHighlightedSentence(item.english, weakWords)}</strong>
-                </article>
-              )
-            })}
-          </div>
         </section>
       </section>,
     )
@@ -2715,9 +2731,9 @@ function App() {
       <section className="study-page">
         <div className="study-header">
           <div className="study-header-actions">
-            <button onClick={() => setStudyModalOpen(true)}>학습 선택</button>
+            <IconButton icon="back" label="스크립트로 돌아가기" onClick={() => setScreen('script')} /><IconButton icon="settings" label="학습 설정" onClick={() => setStudyModalOpen(true)} />
             <button onClick={() => moveFlashcard(-1)} disabled={flashIndex <= 0 || wordPickerOpen || done}>
-              이전
+              <Icon name="back" /><span className="sr-only">이전 카드</span>
             </button>
           </div>
           <div>
@@ -2731,7 +2747,7 @@ function App() {
               onClick={() => moveFlashcard(1)}
               disabled={flashIndex >= flashQueue.length - 1 || wordPickerOpen || done}
             >
-              다음
+              <Icon name="arrow" /><span className="sr-only">다음 카드</span>
             </button>
             <label className="toggle-line">
               <input
@@ -2744,10 +2760,12 @@ function App() {
           </div>
         </div>
 
+        <Progress value={flashIndex} total={flashQueue.length} />
+        {!done && <StudyTip key="flash-tip" context="flashcard" />}
         {done ? (
           <section className="result-card">
             <h1>플래시카드 완료</h1>
-            <p>모르는 카드 {flashUnknown.length}개를 기록했습니다.</p>
+            <p>{flashQueue.length}개의 문장을 학습했어요. 다시 연습할 문장은 {flashUnknown.length}개예요.</p>
             <div className="button-row">
               <button className="primary-btn" onClick={startFlashcard}>
                 다시 학습
@@ -2758,25 +2776,22 @@ function App() {
         ) : (
           item && (
             <>
-              <button className="flashcard" onClick={() => setFlashRevealed((prev) => !prev)}>
-                <span>{item.number}번</span>
+              <button key={flashIndex} className={`flashcard ${flashRevealed ? 'revealed' : ''}`} aria-expanded={flashRevealed} onClick={() => setFlashRevealed((prev) => !prev)}>
+                <span className="flash-label"><Icon name="cards" />SENTENCE {String(flashIndex + 1).padStart(2, '0')}</span>
                 <strong>{item.meaning}</strong>
-                {flashRevealed && <em>{item.english}</em>}
+                {flashRevealed ? <em className="flash-answer">{item.english}</em> : <span className="reveal-hint"><Icon name="eye" />눌러서 영어 문장 확인 <kbd>Space</kbd></span>}
+                {flashRevealed && <span className="reveal-hint">얼마나 잘 기억하고 있었나요?</span>}
               </button>
               <div className="study-actions">
-                <button className="danger-btn big-round" onClick={() => void advanceFlashcard(false)}>
-                  X
-                </button>
-                <button className="success-btn big-round" onClick={() => void advanceFlashcard(true)}>
-                  O
-                </button>
+                <AsyncButton className="review-btn" disabled={!flashRevealed} onAction={() => advanceFlashcard(false)}><Icon name="reset" />다시 연습</AsyncButton>
+                <AsyncButton className="success-btn recall-btn" disabled={!flashRevealed} onAction={() => advanceFlashcard(true)}><Icon name="check" />기억했어요</AsyncButton>
               </div>
             </>
           )
         )}
 
         {wordPickerOpen && (
-          <div className="modal-backdrop">
+          <Modal label="어려웠던 단어 선택">
             <section className="word-modal">
               <h2>어려웠던 단어 선택</h2>
               <p>{pickerItem?.english}</p>
@@ -2799,13 +2814,11 @@ function App() {
                 ))}
               </div>
               <div className="button-row">
-                <button className="primary-btn" onClick={() => void closeWordPicker(true)}>
-                  기록
-                </button>
-                <button onClick={() => void closeWordPicker(false)}>넘기기</button>
+                <AsyncButton className="primary-btn" onAction={() => closeWordPicker(true)}><Icon name="check" />{selectedWords.size}개 기록</AsyncButton>
+                <AsyncButton onAction={() => closeWordPicker(false)}>넘기기</AsyncButton>
               </div>
             </section>
-          </div>
+          </Modal>
         )}
       </section>,
     )
@@ -2828,7 +2841,7 @@ function App() {
             onClick={() => moveDictationQuestion(-1)}
             disabled={dictationIndex <= 0 || isDictationDone}
           >
-            이전 문장
+            <Icon name="back" /><span className="sr-only">이전 문장</span>
           </button>
           <div>
             <strong>받아쓰기</strong>
@@ -2841,10 +2854,12 @@ function App() {
             onClick={() => moveDictationQuestion(1)}
             disabled={dictationIndex >= total - 1 || isDictationDone}
           >
-            다음 문장
+            <Icon name="arrow" /><span className="sr-only">다음 문장</span>
           </button>
         </div>
 
+        <Progress value={solvedCount} total={total} />
+        {!isDictationDone && <StudyTip key={currentGrade ? 'graded-tip' : 'dictation-tip'} context={currentGrade ? 'graded' : 'dictation'} />}
         {isDictationDone ? (
           <section className="result-card">
             <h1>받아쓰기 완료</h1>
@@ -2883,7 +2898,8 @@ function App() {
           </section>
         ) : (
           currentQuestion && (
-            <section className="question-card">
+            <section className="question-card" key={dictationIndex}>
+              <p className="eyebrow question-label">SENTENCE {String(dictationIndex + 1).padStart(2, '0')}<span>{currentGrade ? '채점 완료' : '빈칸을 채워 보세요'}</span></p>
               <div className="question-top">
                 <p>
                   {currentQuestion.item.number}. {currentQuestion.item.meaning}
@@ -2934,6 +2950,10 @@ function App() {
                           if (currentGrade) void toggleBlankGrade(unit)
                         }}
                         onKeyDown={(event) => {
+                          if (currentGrade && event.key === ' ') {
+                            event.preventDefault()
+                            void toggleBlankGrade(unit)
+                          }
                           if (event.key === 'Enter') {
                             event.preventDefault()
                             handleBlankEnter(unit.blankId)
@@ -2942,29 +2962,16 @@ function App() {
                       />
                       {unit.suffix}
                       {currentGrade && !currentGrade.checkedById[unit.blankId] && (
-                        <small onClick={() => void toggleBlankGrade(unit)}>{unit.answer}</small>
+                        <button className="answer-correction" title="정답으로 변경" aria-label={`${unit.answer}: 정답으로 변경`} onClick={() => void toggleBlankGrade(unit)}>{unit.answer}</button>
                       )}
                     </span>
                   )
                 })}
               </div>
               <div className="button-row">
-                <button
-                  className="primary-btn"
-                  onClick={currentGrade ? () => void goNextDictation() : () => void gradeCurrent()}
-                >
-                  {currentGrade ? '다음' : '채점'}
-                </button>
-                <button onClick={resetCurrentAnswers} disabled={Boolean(currentGrade) || !blanks.length}>
-                  초기화
-                </button>
-                <button
-                  onClick={() => {
-                    void saveCurrentDictationProgress().then(() => setScreen('script'))
-                  }}
-                >
-                  나가기
-                </button>
+                <AsyncButton className="primary-btn" onAction={currentGrade ? goNextDictation : gradeCurrent}><Icon name={currentGrade ? 'arrow' : 'check'} />{currentGrade ? (dictationIndex === total - 1 ? '결과 보기' : '다음 문장') : '채점하기'}</AsyncButton>
+                <IconButton icon="reset" label="이 문장 입력 초기화" onClick={resetCurrentAnswers} disabled={Boolean(currentGrade) || !blanks.length} />
+                <AsyncButton className="exit-study" onAction={async () => { await saveCurrentDictationProgress(); setScreen('script') }}><Icon name="logout" />저장 후 나가기</AsyncButton>
               </div>
             </section>
           )
