@@ -39,6 +39,7 @@ type SentenceStat = {
   flashcardUnknownCount: number
   dictationAttempts: number
   dictationWrongCount: number
+  starred: boolean
   lastStudiedAt?: string
   lastDictationAt?: string
 }
@@ -61,12 +62,25 @@ type DictationSessionRecord = {
   wrongWords: string[]
 }
 
+type FlashcardSessionRecord = {
+  id: string
+  scriptId: string
+  createdAt: string
+  totalCards: number
+  unknownCards: number
+  trackedWords: string[]
+}
+
+type StudyScope = 'all' | 'weak' | 'starred' | 'range'
+type StudyMode = 'standard' | 'weak' | 'starred' | 'range'
+
 type ActiveQuizRecord = {
   id: string
   scriptId: string
-  quizType: 'dictation'
-  mode: 'standard' | 'weak'
-  state: ActiveDictationState
+  quizType: 'dictation' | 'flashcard'
+  mode: StudyMode
+  state: ActiveDictationState | ActiveFlashcardState
+  progress: number
   updatedAt: string
 }
 
@@ -82,6 +96,7 @@ type LearningStore = {
   sentenceStatsByScript: Record<string, Record<string, SentenceStat>>
   wordStatsByScript: Record<string, WordStat[]>
   dictationSessions: DictationSessionRecord[]
+  flashcardSessions: FlashcardSessionRecord[]
   activeQuizzes: ActiveQuizRecord[]
 }
 
@@ -123,6 +138,7 @@ type SentenceStatRow = {
   flashcard_unknown_count: number
   dictation_attempts: number
   dictation_wrong_count: number
+  starred: boolean
   last_studied_at: string | null
   last_dictation_at: string | null
 }
@@ -146,12 +162,22 @@ type DictationSessionRow = {
   wrong_words: string[]
 }
 
+type FlashcardSessionRow = {
+  id: string
+  script_id: string
+  created_at: string
+  total_cards: number
+  unknown_cards: number
+  tracked_words: string[]
+}
+
 type ActiveQuizRow = {
   id: string
   script_id: string
-  quiz_type: 'dictation'
-  mode: 'standard' | 'weak'
-  state: ActiveDictationState
+  quiz_type: 'dictation' | 'flashcard'
+  mode: StudyMode
+  state: ActiveDictationState | ActiveFlashcardState
+  progress: number
   updated_at: string
 }
 
@@ -190,6 +216,14 @@ type ActiveDictationState = {
   answersById: Record<string, string>
   gradesByIndex: Record<string, DictationGrade>
   currentIndex: number
+}
+
+type ActiveFlashcardState = {
+  queue: number[]
+  currentIndex: number
+  revealed: boolean
+  unknownIndexes: number[]
+  trackWords: boolean
 }
 
 type DictationSessionDetail = {
@@ -337,7 +371,14 @@ const pathForScreen = (screen: Screen, scriptId: string | null, sessionId?: stri
 
 const formatPercent = (value: number) => `${Math.round(value)}%`
 
-const dictationModeLabel = (mode: string) => (mode === 'weak' ? '취약 문장' : '전체 받아쓰기')
+const studyModeLabel = (mode: string) => {
+  if (mode === 'weak') return '취약 문장'
+  if (mode === 'starred') return '별표 문장'
+  if (mode === 'range') return '지정 범위'
+  return '전체 문장'
+}
+
+const dictationModeLabel = (mode: string) => `${studyModeLabel(mode)} 받아쓰기`
 
 const extractWords = (english: string) =>
   Array.from(
@@ -491,8 +532,17 @@ const emptyStore = (): LearningStore => ({
   sentenceStatsByScript: {},
   wordStatsByScript: {},
   dictationSessions: [],
+  flashcardSessions: [],
   activeQuizzes: [],
 })
+
+const errorMessageOf = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return '알 수 없는 오류'
+}
 
 const toFriendlyDbError = (message: string) => {
   const lowered = message.toLowerCase()
@@ -525,6 +575,7 @@ const normalizeStore = (
   sentenceRows: SentenceStatRow[],
   wordRows: WordStatRow[],
   dictationRows: DictationSessionRow[],
+  flashcardRows: FlashcardSessionRow[],
   activeQuizRows: ActiveQuizRow[],
 ): LearningStore => {
   const sentenceStatsByScript: Record<string, Record<string, SentenceStat>> = {}
@@ -540,6 +591,7 @@ const normalizeStore = (
       flashcardUnknownCount: row.flashcard_unknown_count,
       dictationAttempts: row.dictation_attempts,
       dictationWrongCount: row.dictation_wrong_count,
+      starred: row.starred,
       lastStudiedAt: row.last_studied_at ?? undefined,
       lastDictationAt: row.last_dictation_at ?? undefined,
     }
@@ -578,12 +630,21 @@ const normalizeStore = (
       wrongQuestions: row.wrong_questions,
       wrongWords: row.wrong_words ?? [],
     })),
+    flashcardSessions: flashcardRows.map((row) => ({
+      id: row.id,
+      scriptId: row.script_id,
+      createdAt: row.created_at,
+      totalCards: row.total_cards,
+      unknownCards: row.unknown_cards,
+      trackedWords: row.tracked_words ?? [],
+    })),
     activeQuizzes: activeQuizRows.map((row) => ({
       id: row.id,
       scriptId: row.script_id,
       quizType: row.quiz_type,
       mode: row.mode,
       state: row.state,
+      progress: row.progress,
       updatedAt: row.updated_at,
     })),
   }
@@ -623,8 +684,11 @@ function App() {
   const [draftError, setDraftError] = useState('')
 
   const [studyModalOpen, setStudyModalOpen] = useState(false)
+  const [studyError, setStudyError] = useState('')
   const [studyKind, setStudyKind] = useState<'flashcard' | 'dictation'>('flashcard')
-  const [weakOnly, setWeakOnly] = useState(false)
+  const [studyScope, setStudyScope] = useState<StudyScope>('all')
+  const [rangeStart, setRangeStart] = useState(1)
+  const [rangeEnd, setRangeEnd] = useState(1)
   const [dictationBlankPercent, setDictationBlankPercent] = useState(30)
   const [trackFlashWords, setTrackFlashWords] = useState(true)
   const [flashQueue, setFlashQueue] = useState<number[]>([])
@@ -639,13 +703,17 @@ function App() {
   const [answersById, setAnswersById] = useState<Record<string, string>>({})
   const [gradesByIndex, setGradesByIndex] = useState<Record<number, DictationGrade>>({})
   const [dictationIndex, setDictationIndex] = useState(0)
-  const [dictationMode, setDictationMode] = useState<'standard' | 'weak'>('standard')
+  const [dictationMode, setDictationMode] = useState<StudyMode>('standard')
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const dictationNavigationRef = useRef<(direction: -1 | 1) => void>(() => undefined)
   const hasAppliedInitialRoute = useRef(false)
 
   const selectedScript = store.scripts.find((script) => script.id === selectedScriptId) ?? null
   const selectedScriptSessions = selectedScript
     ? store.dictationSessions.filter((session) => session.scriptId === selectedScript.id)
+    : []
+  const selectedFlashcardSessions = selectedScript
+    ? store.flashcardSessions.filter((session) => session.scriptId === selectedScript.id)
     : []
   const selectedResultSession =
     selectedScriptSessions.find((session) => session.id === selectedSessionId) ??
@@ -656,10 +724,11 @@ function App() {
   )
   const selectedStats = selectedScript ? store.sentenceStatsByScript[selectedScript.id] ?? {} : {}
   const selectedWordStats = selectedScript ? store.wordStatsByScript[selectedScript.id] ?? [] : []
-  const selectedActiveQuiz = selectedScript
-    ? (store.activeQuizzes.find((quiz) => quiz.scriptId === selectedScript.id && quiz.quizType === 'dictation') ??
-      null)
-    : null
+  const selectedActiveLearnings = selectedScript
+    ? store.activeQuizzes.filter((quiz) => quiz.scriptId === selectedScript.id)
+    : []
+  const selectedActiveDictation = selectedActiveLearnings.find((quiz) => quiz.quizType === 'dictation') ?? null
+  const selectedActiveFlashcard = selectedActiveLearnings.find((quiz) => quiz.quizType === 'flashcard') ?? null
   const sortedScripts = useMemo(
     () => [...store.scripts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [store.scripts],
@@ -685,12 +754,27 @@ function App() {
         .order('updated_at', { ascending: false })
       if (scriptsResult.error) throw scriptsResult.error
 
+      let needsSchemaUpgrade = false
       const sentenceResult = await supabase
         .from('sentence_stats')
         .select(
-          'script_id,sentence_key,number,meaning,english,flashcard_unknown_count,dictation_attempts,dictation_wrong_count,last_studied_at,last_dictation_at',
+          'script_id,sentence_key,number,meaning,english,flashcard_unknown_count,dictation_attempts,dictation_wrong_count,starred,last_studied_at,last_dictation_at',
         )
-      if (sentenceResult.error) throw sentenceResult.error
+      let sentenceRows: SentenceStatRow[] = []
+      if (sentenceResult.error && /starred|column/i.test(sentenceResult.error.message)) {
+        needsSchemaUpgrade = true
+        const legacySentenceResult = await supabase
+          .from('sentence_stats')
+          .select('script_id,sentence_key,number,meaning,english,flashcard_unknown_count,dictation_attempts,dictation_wrong_count,last_studied_at,last_dictation_at')
+        if (legacySentenceResult.error) throw legacySentenceResult.error
+        sentenceRows = (legacySentenceResult.data ?? []).map((row) => ({
+          ...row,
+          starred: false,
+        })) as SentenceStatRow[]
+      } else {
+        if (sentenceResult.error) throw sentenceResult.error
+        sentenceRows = (sentenceResult.data ?? []) as SentenceStatRow[]
+      }
 
       const wordResult = await supabase
         .from('word_stats')
@@ -706,24 +790,52 @@ function App() {
         .order('created_at', { ascending: false })
       if (dictationResult.error) throw dictationResult.error
 
+      const flashcardResult = await supabase
+        .from('flashcard_sessions')
+        .select('id,script_id,created_at,total_cards,unknown_cards,tracked_words')
+        .order('created_at', { ascending: false })
+      if (flashcardResult.error) throw flashcardResult.error
+
       const activeQuizResult = await supabase
         .from('active_quizzes')
-        .select('id,script_id,quiz_type,mode,state,updated_at')
+        .select('id,script_id,quiz_type,mode,state,progress,updated_at')
         .order('updated_at', { ascending: false })
-      if (activeQuizResult.error) throw activeQuizResult.error
+      let activeQuizRows: ActiveQuizRow[] = []
+      if (activeQuizResult.error && /progress|column/i.test(activeQuizResult.error.message)) {
+        needsSchemaUpgrade = true
+        const legacyActiveResult = await supabase
+          .from('active_quizzes')
+          .select('id,script_id,quiz_type,mode,state,updated_at')
+          .order('updated_at', { ascending: false })
+        if (legacyActiveResult.error) throw legacyActiveResult.error
+        activeQuizRows = (legacyActiveResult.data ?? []).map((row) => {
+          const state = row.state as Partial<ActiveDictationState>
+          return {
+            ...row,
+            progress: Math.max(
+              (state.currentIndex ?? -1) + 1,
+              Object.keys(state.gradesByIndex ?? {}).length,
+            ),
+          }
+        }) as ActiveQuizRow[]
+      } else {
+        if (activeQuizResult.error) throw activeQuizResult.error
+        activeQuizRows = (activeQuizResult.data ?? []) as ActiveQuizRow[]
+      }
 
       setStore(
         normalizeStore(
           (scriptsResult.data ?? []) as ScriptRow[],
-          (sentenceResult.data ?? []) as SentenceStatRow[],
+          sentenceRows,
           (wordResult.data ?? []) as WordStatRow[],
           (dictationResult.data ?? []) as DictationSessionRow[],
-          (activeQuizResult.data ?? []) as ActiveQuizRow[],
+          (flashcardResult.data ?? []) as FlashcardSessionRow[],
+          activeQuizRows,
         ),
       )
-      setSyncError('')
+      setSyncError(needsSchemaUpgrade ? '새 학습 저장 기능을 사용하려면 learning-progress-upgrade.sql을 Supabase SQL Editor에서 한 번 실행해 주세요.' : '')
     } catch (error) {
-      const message = error instanceof Error ? error.message : '알 수 없는 오류'
+      const message = errorMessageOf(error)
       setSyncError(`데이터 불러오기 실패: ${toFriendlyDbError(message)}`)
     } finally {
       setIsLoadingStore(false)
@@ -789,6 +901,11 @@ function App() {
     if (!user) return
     void loadStore()
   }, [user, loadStore])
+
+  useEffect(() => {
+    setRangeStart(1)
+    setRangeEnd(Math.max(1, selectedItems.length))
+  }, [selectedScriptId, selectedItems.length])
 
   useEffect(() => {
     if (!user || !hasLoadedStore || isLoadingStore || hasAppliedInitialRoute.current) return
@@ -859,7 +976,7 @@ function App() {
       if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
       if (document.querySelector('[role="dialog"]') || document.querySelector('.question-card [aria-busy="true"]')) return
       event.preventDefault()
-      setDictationIndex((index) => clamp(index + (event.key === 'ArrowLeft' ? -1 : 1), 0, Math.max(0, dictationQuestions.length - 1)))
+      dictationNavigationRef.current(event.key === 'ArrowLeft' ? -1 : 1)
     }
     window.addEventListener('keydown', navigateSentence)
     return () => window.removeEventListener('keydown', navigateSentence)
@@ -1247,6 +1364,7 @@ function App() {
       flashcardUnknownCount: 0,
       dictationAttempts: 0,
       dictationWrongCount: 0,
+      starred: false,
     }
     const next = updater({ ...base, number: item.number, meaning: item.meaning, english: item.english })
 
@@ -1272,6 +1390,7 @@ function App() {
         flashcard_unknown_count: next.flashcardUnknownCount,
         dictation_attempts: next.dictationAttempts,
         dictation_wrong_count: next.dictationWrongCount,
+        starred: next.starred,
         last_studied_at: next.lastStudiedAt ?? null,
         last_dictation_at: next.lastDictationAt ?? null,
         updated_at: nowIso(),
@@ -1279,6 +1398,43 @@ function App() {
       { onConflict: 'owner_id,script_id,sentence_key' },
     )
     if (error) setSyncError(`문장 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
+  const toggleSentenceStar = async (item: QuizItem, index: number) => {
+    if (!supabase || !selectedScript) return
+    const sentenceKey = sentenceKeyOf(item, index)
+    const { data, error } = await supabase.rpc('toggle_sentence_star', {
+      p_script_id: selectedScript.id,
+      p_sentence_key: sentenceKey,
+      p_number: item.number,
+      p_meaning: item.meaning,
+      p_english: item.english,
+    })
+    if (error) {
+      setSyncError(`별표 저장 실패: ${toFriendlyDbError(error.message)} 최신 supabase.sql을 실행해 주세요.`)
+      return
+    }
+    const starred = Boolean(data)
+    setStore((prev) => {
+      const bucket = prev.sentenceStatsByScript[selectedScript.id] ?? {}
+      const current = bucket[sentenceKey] ?? {
+        sentenceKey,
+        number: item.number,
+        meaning: item.meaning,
+        english: item.english,
+        flashcardUnknownCount: 0,
+        dictationAttempts: 0,
+        dictationWrongCount: 0,
+        starred: false,
+      }
+      return {
+        ...prev,
+        sentenceStatsByScript: {
+          ...prev.sentenceStatsByScript,
+          [selectedScript.id]: { ...bucket, [sentenceKey]: { ...current, starred } },
+        },
+      }
+    })
   }
 
   const recordWords = async (
@@ -1490,7 +1646,22 @@ function App() {
     )
   }
 
-  const weakIndexesForSelected = () => {
+  const indexesForScope = (scope: StudyScope) => {
+    if (scope === 'range') {
+      const start = clamp(Math.min(rangeStart, rangeEnd), 1, selectedItems.length)
+      const end = clamp(Math.max(rangeStart, rangeEnd), start, selectedItems.length)
+      return selectedItems.map((_, index) => index).slice(start - 1, end)
+    }
+
+    if (scope === 'starred') {
+      return selectedItems
+        .map((item, index) => ({ index, stat: selectedStats[sentenceKeyOf(item, index)] }))
+        .filter(({ stat }) => stat?.starred)
+        .map(({ index }) => index)
+    }
+
+    if (scope === 'all') return selectedItems.map((_, index) => index)
+
     const weakKeys = new Set(
       Object.values(selectedStats)
         .filter((stat) => stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
@@ -1500,37 +1671,170 @@ function App() {
       .map((item, index) => ({ index, key: sentenceKeyOf(item, index) }))
       .filter(({ key }) => weakKeys.has(key))
       .map(({ index }) => index)
-    return indexes.length ? indexes : selectedItems.map((_, index) => index)
+    return indexes
   }
 
-  const startFlashcard = () => {
+  const modeForScope = (scope: StudyScope): StudyMode =>
+    scope === 'all' ? 'standard' : scope
+
+  const saveActiveLearning = async (
+    quizType: 'dictation' | 'flashcard',
+    scriptId: string,
+    mode: StudyMode,
+    state: ActiveDictationState | ActiveFlashcardState,
+    progress: number,
+    force = false,
+  ): Promise<boolean> => {
+    if (!supabase || !user) return false
+    const existing = store.activeQuizzes.find(
+      (quiz) => quiz.scriptId === scriptId && quiz.quizType === quizType,
+    )
+    const id = existing?.id ?? makeId()
+    const { data, error } = await supabase.rpc('save_active_learning', {
+      p_id: id,
+      p_script_id: scriptId,
+      p_quiz_type: quizType,
+      p_mode: mode,
+      p_state: state,
+      p_progress: progress,
+      p_force: force,
+    })
+    if (error) {
+      setSyncError(`학습 진행 저장 실패: ${toFriendlyDbError(error.message)} 최신 supabase.sql을 실행해 주세요.`)
+      return false
+    }
+
+    const result = (Array.isArray(data) ? data[0] : data) as
+      | { saved: boolean; requires_confirmation: boolean; server_progress: number; server_updated_at: string }
+      | null
+    if (result?.requires_confirmation && !force) {
+      const shouldReplace = window.confirm(
+        `다른 창에 ${result.server_progress}번까지 저장된 학습이 있습니다. 현재 창의 ${progress}번 상태로 덮어쓰면 앞선 진행 기록이 줄어듭니다. 그래도 저장할까요?`,
+      )
+      if (!shouldReplace) {
+        await loadStore()
+        setSyncError('더 앞선 학습 기록을 유지했습니다. 스크립트에서 이어하기를 눌러 최신 기록을 불러오세요.')
+        return false
+      }
+      return saveActiveLearning(quizType, scriptId, mode, state, progress, true)
+    }
+    if (!result?.saved) return false
+
+    const record: ActiveQuizRecord = {
+      id,
+      scriptId,
+      quizType,
+      mode,
+      state,
+      progress,
+      updatedAt: result.server_updated_at ?? nowIso(),
+    }
+    setStore((prev) => ({
+      ...prev,
+      activeQuizzes: [
+        record,
+        ...prev.activeQuizzes.filter(
+          (quiz) => !(quiz.scriptId === scriptId && quiz.quizType === quizType),
+        ),
+      ],
+    }))
+    setSyncError('')
+    return true
+  }
+
+  const deleteActiveLearning = async (scriptId: string, quizType: 'dictation' | 'flashcard') => {
+    if (!supabase) return
+    setStore((prev) => ({
+      ...prev,
+      activeQuizzes: prev.activeQuizzes.filter(
+        (quiz) => !(quiz.scriptId === scriptId && quiz.quizType === quizType),
+      ),
+    }))
+    const { error } = await supabase
+      .from('active_quizzes')
+      .delete()
+      .eq('script_id', scriptId)
+      .eq('quiz_type', quizType)
+    if (error) setSyncError(`진행 중 학습 삭제 실패: ${toFriendlyDbError(error.message)}`)
+  }
+
+  const flashcardState = (
+    currentIndex = flashIndex,
+    revealed = flashRevealed,
+    unknownIndexes = flashUnknown,
+  ): ActiveFlashcardState => ({
+    queue: flashQueue,
+    currentIndex,
+    revealed,
+    unknownIndexes,
+    trackWords: trackFlashWords,
+  })
+
+  const saveActiveFlashcard = async (
+    state: ActiveFlashcardState,
+    reset = false,
+  ) => {
+    if (!selectedScript) return false
+    const progress = reset
+      ? 1
+      : Math.max(selectedActiveFlashcard?.progress ?? 0, state.currentIndex + 1)
+    return saveActiveLearning('flashcard', selectedScript.id, modeForScope(studyScope), state, progress)
+  }
+
+  const startFlashcard = async () => {
     if (!selectedScript || !selectedItems.length) return
-    const queue = weakOnly ? weakIndexesForSelected() : selectedItems.map((_, index) => index)
-    setStudyModalOpen(false)
+    const queue = indexesForScope(studyScope)
+    if (!queue.length) {
+      setStudyError(studyScope === 'starred' ? '별표 표시한 문장이 없습니다.' : '선택한 조건에 맞는 문장이 없습니다.')
+      return
+    }
+    const state: ActiveFlashcardState = {
+      queue,
+      currentIndex: 0,
+      revealed: false,
+      unknownIndexes: [],
+      trackWords: trackFlashWords,
+    }
+    if (!(await saveActiveFlashcard(state, true))) return
     setFlashQueue(queue)
     setFlashIndex(0)
     setFlashRevealed(false)
     setFlashUnknown([])
+    setStudyModalOpen(false)
     touchScript(selectedScript.id)
     setScreen('flashcard')
   }
 
-  const finishFlashcard = async () => {
+  const finishFlashcard = async (unknownIndexes = flashUnknown) => {
     if (!supabase || !user || !selectedScript) return
     const trackedWords = selectedWordStats
       .filter((stat) => stat.source === 'flashcard')
       .sort((a, b) => b.wrongCount - a.wrongCount)
       .slice(0, 20)
       .map((stat) => stat.word)
-    await supabase.from('flashcard_sessions').insert({
+    const session: FlashcardSessionRecord = {
       id: makeId(),
+      scriptId: selectedScript.id,
+      createdAt: nowIso(),
+      totalCards: flashQueue.length,
+      unknownCards: unknownIndexes.length,
+      trackedWords,
+    }
+    const { error } = await supabase.from('flashcard_sessions').insert({
+      id: session.id,
       owner_id: user.id,
-      script_id: selectedScript.id,
-      created_at: nowIso(),
-      total_cards: flashQueue.length,
-      unknown_cards: flashUnknown.length,
-      tracked_words: trackedWords,
+      script_id: session.scriptId,
+      created_at: session.createdAt,
+      total_cards: session.totalCards,
+      unknown_cards: session.unknownCards,
+      tracked_words: session.trackedWords,
     })
+    if (error) {
+      setSyncError(`플래시카드 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+      return
+    }
+    setStore((prev) => ({ ...prev, flashcardSessions: [session, ...prev.flashcardSessions] }))
+    await deleteActiveLearning(selectedScript.id, 'flashcard')
   }
 
   const advanceFlashcard = async (known: boolean) => {
@@ -1539,14 +1843,19 @@ function App() {
     const item = selectedItems[sourceIndex]
     if (!item) return
 
+    const nextUnknown = !known && !flashUnknown.includes(sourceIndex)
+      ? [...flashUnknown, sourceIndex]
+      : flashUnknown
+
     if (!known) {
-      setFlashUnknown((prev) => (prev.includes(sourceIndex) ? prev : [...prev, sourceIndex]))
+      setFlashUnknown(nextUnknown)
       await upsertSentenceStat(selectedScript.id, item, sourceIndex, (stat) => ({
         ...stat,
         flashcardUnknownCount: stat.flashcardUnknownCount + 1,
         lastStudiedAt: nowIso(),
       }))
       if (trackFlashWords) {
+        await saveActiveFlashcard(flashcardState(flashIndex, flashRevealed, nextUnknown))
         setPendingFlashIndex(sourceIndex)
         setSelectedWords(new Set())
         setWordPickerOpen(true)
@@ -1555,114 +1864,103 @@ function App() {
     }
 
     if (flashIndex >= flashQueue.length - 1) {
-      await finishFlashcard()
+      await finishFlashcard(nextUnknown)
       setFlashIndex(flashQueue.length)
       return
     }
-    setFlashIndex((prev) => prev + 1)
+    const nextIndex = flashIndex + 1
+    if (!(await saveActiveFlashcard(flashcardState(nextIndex, false, nextUnknown)))) return
+    setFlashIndex(nextIndex)
     setFlashRevealed(false)
   }
 
-  const moveFlashcard = (direction: -1 | 1) => {
+  const moveFlashcard = async (direction: -1 | 1) => {
     if (!flashQueue.length || wordPickerOpen) return
-    setFlashIndex((prev) => clamp(prev + direction, 0, flashQueue.length - 1))
+    const nextIndex = clamp(flashIndex + direction, 0, flashQueue.length - 1)
+    if (nextIndex === flashIndex) return
+    if (!(await saveActiveFlashcard(flashcardState(nextIndex, false)))) return
+    setFlashIndex(nextIndex)
     setFlashRevealed(false)
+  }
+
+  const toggleFlashcardReveal = async () => {
+    const revealed = !flashRevealed
+    if (!(await saveActiveFlashcard(flashcardState(flashIndex, revealed)))) return
+    setFlashRevealed(revealed)
   }
 
   const closeWordPicker = async (save: boolean) => {
     if (save && selectedScript && selectedWords.size) {
       await recordWords(selectedScript.id, Array.from(selectedWords), 'flashcard')
     }
-    setWordPickerOpen(false)
-    setPendingFlashIndex(null)
-    setSelectedWords(new Set())
     if (flashIndex >= flashQueue.length - 1) {
       await finishFlashcard()
       setFlashIndex(flashQueue.length)
+      setWordPickerOpen(false)
+      setPendingFlashIndex(null)
+      setSelectedWords(new Set())
       return
     }
-    setFlashIndex((prev) => prev + 1)
+    const nextIndex = flashIndex + 1
+    if (!(await saveActiveFlashcard(flashcardState(nextIndex, false)))) return
+    setWordPickerOpen(false)
+    setPendingFlashIndex(null)
+    setSelectedWords(new Set())
+    setFlashIndex(nextIndex)
     setFlashRevealed(false)
   }
 
   const upsertActiveDictation = async (
     scriptId: string,
-    mode: 'standard' | 'weak',
+    mode: StudyMode,
     state: ActiveDictationState,
+    reset = false,
   ) => {
-    if (!supabase || !user) return
-    const timestamp = nowIso()
-    const existing = store.activeQuizzes.find(
-      (quiz) => quiz.scriptId === scriptId && quiz.quizType === 'dictation',
-    )
-    const record: ActiveQuizRecord = {
-      id: existing?.id ?? makeId(),
-      scriptId,
-      quizType: 'dictation',
-      mode,
-      state,
-      updatedAt: timestamp,
-    }
-
-    setStore((prev) => ({
-      ...prev,
-      activeQuizzes: [
-        record,
-        ...prev.activeQuizzes.filter(
-          (quiz) => !(quiz.scriptId === scriptId && quiz.quizType === 'dictation'),
-        ),
-      ],
-    }))
-
-    const { error } = await supabase.from('active_quizzes').upsert(
-      {
-        id: record.id,
-        owner_id: user.id,
-        script_id: scriptId,
-        quiz_type: 'dictation',
-        mode,
-        state,
-        updated_at: timestamp,
-      },
-      { onConflict: 'owner_id,script_id,quiz_type' },
-    )
-    if (error) setSyncError(`진행 중 퀴즈 저장 실패: ${toFriendlyDbError(error.message)}`)
+    const progress = reset
+      ? 1
+      : Math.max(
+          selectedActiveDictation?.progress ?? 0,
+          Math.min(state.currentIndex + 1, state.questions.length),
+          Object.keys(state.gradesByIndex).length,
+        )
+    return saveActiveLearning('dictation', scriptId, mode, state, progress)
   }
 
   const deleteActiveDictation = async (scriptId: string) => {
-    if (!supabase) return
-    setStore((prev) => ({
-      ...prev,
-      activeQuizzes: prev.activeQuizzes.filter(
-        (quiz) => !(quiz.scriptId === scriptId && quiz.quizType === 'dictation'),
-      ),
-    }))
-    const { error } = await supabase
-      .from('active_quizzes')
-      .delete()
-      .eq('script_id', scriptId)
-      .eq('quiz_type', 'dictation')
-    if (error) setSyncError(`진행 중 퀴즈 삭제 실패: ${toFriendlyDbError(error.message)}`)
+    await deleteActiveLearning(scriptId, 'dictation')
   }
 
   const resumeDictation = (quiz: ActiveQuizRecord) => {
+    const state = quiz.state as ActiveDictationState
     setSelectedScriptId(quiz.scriptId)
     setDictationMode(quiz.mode)
-    setDictationQuestions(quiz.state.questions)
-    setAnswersById(quiz.state.answersById)
+    setDictationQuestions(state.questions)
+    setAnswersById(state.answersById)
     setGradesByIndex(
       Object.fromEntries(
-        Object.entries(quiz.state.gradesByIndex).map(([index, grade]) => [Number(index), grade]),
+        Object.entries(state.gradesByIndex).map(([index, grade]) => [Number(index), grade]),
       ),
     )
-    setDictationIndex(quiz.state.currentIndex)
+    setDictationIndex(state.currentIndex)
     touchScript(quiz.scriptId)
     setScreen('dictation')
   }
 
-  const startDictation = (mode: 'standard' | 'weak', retrySourceIndexes?: number[]) => {
+  const resumeFlashcard = (quiz: ActiveQuizRecord) => {
+    const state = quiz.state as ActiveFlashcardState
+    setSelectedScriptId(quiz.scriptId)
+    setStudyScope(quiz.mode === 'standard' ? 'all' : quiz.mode)
+    setFlashQueue(state.queue)
+    setFlashIndex(state.currentIndex)
+    setFlashRevealed(state.revealed)
+    setFlashUnknown(state.unknownIndexes ?? [])
+    setTrackFlashWords(state.trackWords ?? true)
+    touchScript(quiz.scriptId)
+    setScreen('flashcard')
+  }
+
+  const startDictation = async (mode: StudyMode, retrySourceIndexes?: number[]) => {
     if (!selectedScript || !selectedItems.length) return
-    setStudyModalOpen(false)
     const weakWords = new Set(
       selectedWordStats
         .filter((stat) => stat.wrongCount > 0)
@@ -1671,24 +1969,29 @@ function App() {
     )
     const sourceIndexes =
       retrySourceIndexes ??
-      (mode === 'weak' ? weakIndexesForSelected() : selectedItems.map((_, index) => index))
-    if (!sourceIndexes.length) return
+      indexesForScope(mode === 'standard' ? 'all' : mode)
+    if (!sourceIndexes.length) {
+      setStudyError(mode === 'starred' ? '별표 표시한 문장이 없습니다.' : '선택한 조건에 맞는 문장이 없습니다.')
+      return
+    }
     const questions = sourceIndexes.map((index) =>
       makeDictationQuestion(selectedItems[index], index, weakWords, dictationBlankPercent),
     )
     const initialAnswers = createAnswers(questions)
+    const state: ActiveDictationState = {
+      questions,
+      answersById: initialAnswers,
+      gradesByIndex: {},
+      currentIndex: 0,
+    }
+    if (!(await upsertActiveDictation(selectedScript.id, mode, state, true))) return
     setDictationMode(mode)
     setDictationQuestions(questions)
     setAnswersById(initialAnswers)
     setGradesByIndex({})
     setDetailedResultSessionId(null)
     setDictationIndex(0)
-    void upsertActiveDictation(selectedScript.id, mode, {
-      questions,
-      answersById: initialAnswers,
-      gradesByIndex: {},
-      currentIndex: 0,
-    })
+    setStudyModalOpen(false)
     touchScript(selectedScript.id)
     setScreen('dictation')
   }
@@ -1701,32 +2004,38 @@ function App() {
           .filter((index): index is number => typeof index === 'number'),
       ),
     )
-    startDictation('weak', retrySourceIndexes)
+    void startDictation('weak', retrySourceIndexes)
   }
 
-  const initializeDictationFromRoute = useEffectEvent(() => startDictation('standard'))
+  const initializeLearningFromRoute = useEffectEvent(() => {
+    if (screen === 'dictation') {
+      if (selectedActiveDictation) resumeDictation(selectedActiveDictation)
+      else void startDictation('standard')
+    }
+    if (screen === 'flashcard') {
+      if (selectedActiveFlashcard) resumeFlashcard(selectedActiveFlashcard)
+      else void startFlashcard()
+    }
+  })
 
   useEffect(() => {
-    if (screen === 'flashcard' && selectedScript && selectedItems.length && !flashQueue.length) {
-      setFlashQueue(selectedItems.map((_, index) => index))
-      setFlashIndex(0)
-      setFlashRevealed(false)
-      setFlashUnknown([])
-    }
-    if (
-      screen === 'dictation' &&
-      selectedScript &&
-      selectedItems.length &&
-      !dictationQuestions.length
-    ) {
-      initializeDictationFromRoute()
-    }
+    if (!selectedScript || !selectedItems.length) return
+    if (screen === 'flashcard' && !flashQueue.length) initializeLearningFromRoute()
+    if (screen === 'dictation' && !dictationQuestions.length) initializeLearningFromRoute()
   }, [dictationQuestions.length, flashQueue.length, screen, selectedItems, selectedScript])
 
   const gradeCurrent = async () => {
     if (!currentQuestion || currentGrade || !selectedScript) return
     const grade = gradeQuestion(currentQuestion, answersById)
     const nextGrades = { ...gradesByIndex, [dictationIndex]: grade }
+    if (!(await upsertActiveDictation(selectedScript.id, dictationMode, {
+      questions: dictationQuestions,
+      answersById,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(nextGrades).map(([index, itemGrade]) => [String(index), itemGrade]),
+      ),
+      currentIndex: dictationIndex,
+    }))) return
     const wordDeltas = collectBlanks(currentQuestion).reduce<Record<string, number>>((acc, blank) => {
       const word = normalizeWord(blank.answer)
       if (!word) return acc
@@ -1755,14 +2064,6 @@ function App() {
     )
     await adjustWordStats(selectedScript.id, 'dictation', wordDeltas)
     setGradesByIndex(nextGrades)
-    await upsertActiveDictation(selectedScript.id, dictationMode, {
-      questions: dictationQuestions,
-      answersById,
-      gradesByIndex: Object.fromEntries(
-        Object.entries(nextGrades).map(([index, itemGrade]) => [String(index), itemGrade]),
-      ),
-      currentIndex: dictationIndex,
-    })
   }
 
   const saveDictationSession = async () => {
@@ -1881,23 +2182,34 @@ function App() {
       return
     }
     const nextIndex = dictationIndex + 1
-    setDictationIndex(nextIndex)
     if (selectedScript) {
-      await upsertActiveDictation(selectedScript.id, dictationMode, {
+      if (!(await upsertActiveDictation(selectedScript.id, dictationMode, {
         questions: dictationQuestions,
         answersById,
         gradesByIndex: Object.fromEntries(
           Object.entries(gradesByIndex).map(([index, grade]) => [String(index), grade]),
         ),
         currentIndex: nextIndex,
-      })
+      }))) return
     }
+    setDictationIndex(nextIndex)
   }
 
-  const moveDictationQuestion = (direction: -1 | 1) => {
-    if (!dictationQuestions.length || isDictationDone) return
-    setDictationIndex((prev) => clamp(prev + direction, 0, dictationQuestions.length - 1))
+  const moveDictationQuestion = async (direction: -1 | 1) => {
+    if (!selectedScript || !dictationQuestions.length || isDictationDone) return
+    const nextIndex = clamp(dictationIndex + direction, 0, dictationQuestions.length - 1)
+    if (nextIndex === dictationIndex) return
+    if (!(await upsertActiveDictation(selectedScript.id, dictationMode, {
+      questions: dictationQuestions,
+      answersById,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(gradesByIndex).map(([index, grade]) => [String(index), grade]),
+      ),
+      currentIndex: nextIndex,
+    }))) return
+    setDictationIndex(nextIndex)
   }
+  dictationNavigationRef.current = (direction) => void moveDictationQuestion(direction)
 
   const handleBlankEnter = (blankId: string) => {
     if (!currentQuestion) return
@@ -1930,6 +2242,9 @@ function App() {
 
   const navigateMain = async (nextScreen: 'home' | 'community' | 'profile') => {
     if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
+    if (screen === 'flashcard' && flashQueue.length && flashIndex < flashQueue.length) {
+      await saveActiveFlashcard(flashcardState())
+    }
     if (nextScreen === 'community') { setSelectedCommunityId(null); setCommunityNotice('') }
     setScreen(nextScreen)
   }
@@ -1945,6 +2260,15 @@ function App() {
     const nextGrades = { ...gradesByIndex, [dictationIndex]: nextGrade }
     const wasWrongSentence = currentGrade.correct < currentGrade.total
     const isWrongSentence = nextGrade.correct < nextGrade.total
+
+    if (!(await upsertActiveDictation(selectedScript.id, dictationMode, {
+      questions: dictationQuestions,
+      answersById,
+      gradesByIndex: Object.fromEntries(
+        Object.entries(nextGrades).map(([index, grade]) => [String(index), grade]),
+      ),
+      currentIndex: dictationIndex,
+    }))) return
 
     setGradesByIndex(nextGrades)
 
@@ -1970,14 +2294,6 @@ function App() {
       )
     }
 
-    await upsertActiveDictation(selectedScript.id, dictationMode, {
-      questions: dictationQuestions,
-      answersById,
-      gradesByIndex: Object.fromEntries(
-        Object.entries(nextGrades).map(([index, grade]) => [String(index), grade]),
-      ),
-      currentIndex: dictationIndex,
-    })
   }
 
   const resetCurrentAnswers = () => {
@@ -1990,6 +2306,30 @@ function App() {
       return next
     })
   }
+
+  const handleFlashcardShortcut = useEffectEvent((key: string) => {
+    if (key === 'ArrowUp') void moveFlashcard(-1)
+    if (key === 'ArrowDown') void moveFlashcard(1)
+    if (key === 'ArrowLeft' && flashRevealed) {
+      document.querySelector<HTMLButtonElement>('.review-btn')?.click()
+    }
+    if (key === 'ArrowRight' && flashRevealed) {
+      document.querySelector<HTMLButtonElement>('.recall-btn')?.click()
+    }
+  })
+
+  useEffect(() => {
+    if (screen !== 'flashcard' || wordPickerOpen || studyModalOpen || flashIndex >= flashQueue.length) return
+    const handleKey = (event: KeyboardEvent) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+      if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
+      if (document.querySelector('[role="dialog"]')) return
+      event.preventDefault()
+      handleFlashcardShortcut(event.key)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [screen, wordPickerOpen, studyModalOpen, flashIndex, flashQueue.length])
 
   if (!supabase) {
     return (
@@ -2214,14 +2554,35 @@ function App() {
               </div>
 
               <div className="study-settings">
-                <label className="check-line">
-                  <input
-                    type="checkbox"
-                    checked={weakOnly}
-                    onChange={(event) => setWeakOnly(event.target.checked)}
-                  />
-                  취약 문장 연습
-                </label>
+                <fieldset className="scope-picker">
+                  <legend>학습할 문장</legend>
+                  <div>
+                    {([
+                      ['all', '전체'],
+                      ['weak', '취약'],
+                      ['starred', '별표'],
+                      ['range', '범위 지정'],
+                    ] as const).map(([scope, label]) => (
+                      <button
+                        type="button"
+                        className={studyScope === scope ? 'active' : ''}
+                        aria-pressed={studyScope === scope}
+                        key={scope}
+                        onClick={() => { setStudyScope(scope); setStudyError('') }}
+                      >
+                        {scope === 'starred' && <Icon name="star" />}{label}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                {studyScope === 'range' && (
+                  <div className="range-picker">
+                    <label><span>시작</span><input type="number" min="1" max={selectedItems.length} value={rangeStart} onChange={(event) => setRangeStart(clamp(Number(event.target.value) || 1, 1, selectedItems.length))} /></label>
+                    <span>–</span>
+                    <label><span>끝</span><input type="number" min="1" max={selectedItems.length} value={rangeEnd} onChange={(event) => setRangeEnd(clamp(Number(event.target.value) || 1, 1, selectedItems.length))} /></label>
+                    <small>총 {Math.abs(rangeEnd - rangeStart) + 1}문장</small>
+                  </div>
+                )}
                 {studyKind === 'flashcard' ? (
                   <label className="check-line">
                     <input
@@ -2250,17 +2611,18 @@ function App() {
                     <p className="setting-note">틀린 문장과 단어를 기록하고 취약 단어를 우선 빈칸 처리합니다.</p>
                   </>
                 )}
+                {studyError && <p className="error-text">{studyError}</p>}
               </div>
 
-              <button
+              <AsyncButton
                 className="primary-btn full-btn"
-                onClick={() => {
-                  if (studyKind === 'flashcard') startFlashcard()
-                  else startDictation(weakOnly ? 'weak' : 'standard')
+                onAction={async () => {
+                  if (studyKind === 'flashcard') await startFlashcard()
+                  else await startDictation(modeForScope(studyScope))
                 }}
               >
                 {studyKind === 'flashcard' ? '플래시카드 시작' : '받아쓰기 시작'}
-              </button>
+              </AsyncButton>
             </section>
           </Modal>
         )}
@@ -2277,7 +2639,7 @@ function App() {
     return shell(<section className="profile-page">
       <div className="page-top"><div><p className="eyebrow">My account</p><h1>내 정보</h1><p className="page-description">나의 학습 공간을 관리해요.</p></div></div>
       <section className="profile-card"><span className="avatar">{displayLoginId(user).slice(0, 1).toUpperCase()}</span><div><h2>{displayLoginId(user)}</h2><p>{user.email}</p><span className="count-badge">Molip Study</span></div></section>
-      <section className="profile-stats" aria-label="내 학습 기록"><article><Icon name="book" /><strong>{store.scripts.length}</strong><span>내 스크립트</span></article><article><Icon name="history" /><strong>{store.dictationSessions.length}</strong><span>완료한 퀴즈</span></article><article><Icon name="pen" /><strong>{store.activeQuizzes.length}</strong><span>진행 중인 학습</span></article></section>
+      <section className="profile-stats" aria-label="내 학습 기록"><article><Icon name="book" /><strong>{store.scripts.length}</strong><span>내 스크립트</span></article><article><Icon name="history" /><strong>{store.dictationSessions.length + store.flashcardSessions.length}</strong><span>완료한 학습</span></article><article><Icon name="pen" /><strong>{store.activeQuizzes.length}</strong><span>진행 중인 학습</span></article></section>
       <section className="body-panel profile-services"><h2>몰입 스터디</h2>{BRAND_LINKS.map(link => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><Icon name="arrow" /></a>)}</section>
       <AsyncButton className="profile-logout" onAction={signOut}><Icon name="logout" />로그아웃</AsyncButton>
     </section>)
@@ -2462,32 +2824,32 @@ function App() {
           </div>
           <div className="script-actions">
             <IconButton icon="edit" label="스크립트 수정" onClick={() => openEditor(selectedScript)} />
-            <button onClick={() => setScreen('history')}><Icon name="history" />퀴즈 내역 <span className="count-badge">{selectedScriptSessions.length}</span></button>
+            <button onClick={() => setScreen('history')}><Icon name="history" />학습 내역 <span className="count-badge">{selectedScriptSessions.length + selectedFlashcardSessions.length}</span></button>
             <button className="primary-btn jumbo-btn" onClick={() => setStudyModalOpen(true)}>
               <Icon name="play" />학습하기
             </button>
           </div>
         </div>
 
-        {selectedActiveQuiz && (
-          <section className="resume-banner">
-            <div>
-              <strong>진행 중인 받아쓰기가 있습니다.</strong>
-              <span>
-                {selectedActiveQuiz.mode === 'weak' ? '취약 문장 연습' : '전체 받아쓰기'} ·{' '}
-                {Math.min(
-                  selectedActiveQuiz.state.currentIndex + 1,
-                  selectedActiveQuiz.state.questions.length,
-                )}{' '}
-                / {selectedActiveQuiz.state.questions.length} · 저장{' '}
-                {formatDateTime(selectedActiveQuiz.updatedAt)}
-              </span>
-            </div>
-            <div className="button-row">
-              <button className="primary-btn" onClick={() => resumeDictation(selectedActiveQuiz)}>
-                <Icon name="play" />이어하기
-              </button>
-              <AsyncButton className="icon-btn" aria-label="진행 중인 받아쓰기 삭제" title="진행 중인 받아쓰기 삭제" onAction={() => deleteActiveDictation(selectedScript.id)}><Icon name="trash" /></AsyncButton>
+        {!!selectedActiveLearnings.length && (
+          <section className="active-learning-panel">
+            <div className="panel-top"><div><p className="eyebrow">Continue</p><h2>학습 이어하기</h2></div><span className="panel-count">{selectedActiveLearnings.length}개</span></div>
+            <div className="active-learning-list">
+              {selectedActiveLearnings.map((learning) => {
+                const isDictation = learning.quizType === 'dictation'
+                const state = learning.state as ActiveDictationState | ActiveFlashcardState
+                const total = isDictation
+                  ? (state as ActiveDictationState).questions.length
+                  : (state as ActiveFlashcardState).queue.length
+                return <article className="resume-banner" key={learning.quizType}>
+                  <span className="learning-type-icon"><Icon name={isDictation ? 'pen' : 'cards'} /></span>
+                  <div className="learning-summary"><strong>{isDictation ? '받아쓰기' : '플래시카드'}</strong><span>{studyModeLabel(learning.mode)} · {Math.min(learning.progress, total)} / {total} · {formatDateTime(learning.updatedAt)} 저장</span></div>
+                  <div className="button-row">
+                    <button className="primary-btn" onClick={() => isDictation ? resumeDictation(learning) : resumeFlashcard(learning)}><Icon name="play" />이어하기</button>
+                    <AsyncButton className="icon-btn" aria-label={`${isDictation ? '받아쓰기' : '플래시카드'} 기록 삭제`} title="진행 중인 학습 삭제" onAction={() => deleteActiveLearning(selectedScript.id, learning.quizType)}><Icon name="trash" /></AsyncButton>
+                  </div>
+                </article>
+              })}
             </div>
           </section>
         )}
@@ -2507,9 +2869,10 @@ function App() {
                 (stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
               return (
                 <article
-                  className={isWeakSentence ? 'weak-sentence' : ''}
+                  className={`${isWeakSentence ? 'weak-sentence' : ''} ${stat?.starred ? 'starred-sentence' : ''}`}
                   key={`${item.number}-${item.english}`}
                 >
+                  <IconButton className={`star-button ${stat?.starred ? 'active' : ''}`} icon="star" label={stat?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(stat?.starred)} onClick={() => void toggleSentenceStar(item, index)} />
                   <span className="sentence-number">{String(index + 1).padStart(2, '0')}</span>
                   {showMeaning && <p>
                     {item.meaning}
@@ -2529,16 +2892,16 @@ function App() {
     return shell(
       <section className="history-page">
         <button className="text-btn back-link" onClick={() => setScreen('script')}><Icon name="back" />{selectedScript.title}</button>
-        <div className="page-top"><div><p className="eyebrow">Your progress</p><h1>퀴즈 내역</h1><p className="page-description">차곡차곡 쌓인 나의 학습 기록</p></div><button className="primary-btn" onClick={() => setStudyModalOpen(true)}><Icon name="play" />새 학습</button></div>
+        <div className="page-top"><div><p className="eyebrow">Learning history</p><h1>학습 내역</h1><p className="page-description">차곡차곡 쌓인 나의 학습 기록</p></div><button className="primary-btn" onClick={() => setStudyModalOpen(true)}><Icon name="play" />새 학습</button></div>
         <section className="body-panel quiz-history-panel">
           <div className="panel-top">
             <div>
-              <p className="eyebrow">Quiz History</p>
-              <h2>퀴즈 내역</h2>
+              <p className="eyebrow">Learning History</p>
+              <h2>학습 내역</h2>
             </div>
-            <span className="panel-count">{selectedScriptSessions.length}개</span>
+            <span className="panel-count">{selectedScriptSessions.length + selectedFlashcardSessions.length}개</span>
           </div>
-          {selectedScriptSessions.length ? (
+          {!!selectedScriptSessions.length && (
             <div className="quiz-history-list">
               {selectedScriptSessions.map((session) => {
                 const accuracy =
@@ -2566,10 +2929,22 @@ function App() {
                 )
               })}
             </div>
-          ) : (
+          )}
+          {!selectedScriptSessions.length && !selectedFlashcardSessions.length && (
             <div className="empty-state slim">
-              <h2>아직 퀴즈 기록이 없습니다.</h2>
-              <p>받아쓰기를 완료하면 이곳에 결과가 쌓입니다.</p>
+              <h2>아직 학습 기록이 없습니다.</h2>
+              <p>플래시카드나 받아쓰기를 완료하면 이곳에 결과가 쌓입니다.</p>
+            </div>
+          )}
+          {!!selectedFlashcardSessions.length && (
+            <div className="quiz-history-list flashcard-history-list">
+              {selectedFlashcardSessions.map((session) => (
+                <article className="quiz-history-row" key={session.id}>
+                  <span className="quiz-history-main"><strong>{formatDateTime(session.createdAt)}</strong><small>플래시카드 · {session.totalCards}문장 학습</small></span>
+                  <span className="quiz-history-stats"><em>{session.totalCards - session.unknownCards}/{session.totalCards}</em><small>기억함 · 다시 연습 {session.unknownCards}</small></span>
+                  <Icon name="cards" className="row-arrow" />
+                </article>
+              ))}
             </div>
           )}
         </section>
@@ -2690,6 +3065,7 @@ function App() {
                 const grade = gradesByIndex[index]
                 return (
                   <article key={question.sentenceKey}>
+                    <IconButton className={`star-button ${selectedStats[question.sentenceKey]?.starred ? 'active' : ''}`} icon="star" label={selectedStats[question.sentenceKey]?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(selectedStats[question.sentenceKey]?.starred)} onClick={() => void toggleSentenceStar(question.item, question.sourceIndex)} />
                     <strong>
                       {question.item.number}. {question.item.meaning}
                     </strong>
@@ -2731,7 +3107,7 @@ function App() {
       <section className="study-page">
         <div className="study-header">
           <div className="study-header-actions">
-            <IconButton icon="back" label="스크립트로 돌아가기" onClick={() => setScreen('script')} /><IconButton icon="settings" label="학습 설정" onClick={() => setStudyModalOpen(true)} />
+            <IconButton icon="back" label="스크립트로 돌아가기" onClick={() => void saveActiveFlashcard(flashcardState()).then((saved) => { if (saved) setScreen('script') })} /><IconButton icon="settings" label="학습 설정" onClick={() => setStudyModalOpen(true)} />
             <button onClick={() => moveFlashcard(-1)} disabled={flashIndex <= 0 || wordPickerOpen || done}>
               <Icon name="back" /><span className="sr-only">이전 카드</span>
             </button>
@@ -2753,7 +3129,12 @@ function App() {
               <input
                 type="checkbox"
                 checked={trackFlashWords}
-                onChange={(event) => setTrackFlashWords(event.target.checked)}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  void saveActiveFlashcard({ ...flashcardState(), trackWords: checked }).then((saved) => {
+                    if (saved) setTrackFlashWords(checked)
+                  })
+                }}
               />
               단어 기록
             </label>
@@ -2776,12 +3157,15 @@ function App() {
         ) : (
           item && (
             <>
-              <button key={flashIndex} className={`flashcard ${flashRevealed ? 'revealed' : ''}`} aria-expanded={flashRevealed} onClick={() => setFlashRevealed((prev) => !prev)}>
-                <span className="flash-label"><Icon name="cards" />SENTENCE {String(flashIndex + 1).padStart(2, '0')}</span>
-                <strong>{item.meaning}</strong>
-                {flashRevealed ? <em className="flash-answer">{item.english}</em> : <span className="reveal-hint"><Icon name="eye" />눌러서 영어 문장 확인 <kbd>Space</kbd></span>}
-                {flashRevealed && <span className="reveal-hint">얼마나 잘 기억하고 있었나요?</span>}
-              </button>
+              <section className="flashcard-shell" key={flashIndex}>
+                <IconButton className={`star-button ${selectedStats[sentenceKeyOf(item, sourceIndex)]?.starred ? 'active' : ''}`} icon="star" label={selectedStats[sentenceKeyOf(item, sourceIndex)]?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(selectedStats[sentenceKeyOf(item, sourceIndex)]?.starred)} onClick={() => void toggleSentenceStar(item, sourceIndex)} />
+                <button className={`flashcard ${flashRevealed ? 'revealed' : ''}`} aria-expanded={flashRevealed} onClick={() => void toggleFlashcardReveal()}>
+                  <span className="flash-label"><Icon name="cards" />SENTENCE {String(sourceIndex + 1).padStart(2, '0')}</span>
+                  <strong>{item.meaning}</strong>
+                  {flashRevealed ? <em className="flash-answer">{item.english}</em> : <span className="reveal-hint"><Icon name="eye" />눌러서 영어 문장 확인 <kbd>Space</kbd></span>}
+                  {flashRevealed && <span className="reveal-hint">얼마나 잘 기억하고 있었나요?</span>}
+                </button>
+              </section>
               <div className="study-actions">
                 <AsyncButton className="review-btn" disabled={!flashRevealed} onAction={() => advanceFlashcard(false)}><Icon name="reset" />다시 연습</AsyncButton>
                 <AsyncButton className="success-btn recall-btn" disabled={!flashRevealed} onAction={() => advanceFlashcard(true)}><Icon name="check" />기억했어요</AsyncButton>
@@ -2875,6 +3259,7 @@ function App() {
                   const grade = gradesByIndex[index]
                   return (
                     <article key={question.sentenceKey}>
+                      <IconButton className={`star-button ${selectedStats[question.sentenceKey]?.starred ? 'active' : ''}`} icon="star" label={selectedStats[question.sentenceKey]?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(selectedStats[question.sentenceKey]?.starred)} onClick={() => void toggleSentenceStar(question.item, question.sourceIndex)} />
                       <strong>
                         {question.item.number}. {question.item.meaning}
                       </strong>
@@ -2899,7 +3284,10 @@ function App() {
         ) : (
           currentQuestion && (
             <section className="question-card" key={dictationIndex}>
-              <p className="eyebrow question-label">SENTENCE {String(dictationIndex + 1).padStart(2, '0')}<span>{currentGrade ? '채점 완료' : '빈칸을 채워 보세요'}</span></p>
+              <div className="question-label-row">
+                <p className="eyebrow question-label">SENTENCE {String(currentQuestion.sourceIndex + 1).padStart(2, '0')}<span>{currentGrade ? '채점 완료' : '빈칸을 채워 보세요'}</span></p>
+                <IconButton className={`star-button ${selectedStats[currentQuestion.sentenceKey]?.starred ? 'active' : ''}`} icon="star" label={selectedStats[currentQuestion.sentenceKey]?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(selectedStats[currentQuestion.sentenceKey]?.starred)} onClick={() => void toggleSentenceStar(currentQuestion.item, currentQuestion.sourceIndex)} />
+              </div>
               <div className="question-top">
                 <p>
                   {currentQuestion.item.number}. {currentQuestion.item.meaning}
