@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from 'react'
 import { AsyncButton } from '../../../shared/ui'
+import { InstallAppButton } from '../../../features/install-app'
 
 type AuthMode = 'login' | 'signup'
 
@@ -83,6 +84,7 @@ export function AuthPage({
         <AsyncButton className="primary-btn full-btn" onAction={onSubmit}>
           {mode === 'login' ? '로그인' : '회원가입'}
         </AsyncButton>
+        <InstallAppButton />
       </section>
     </main>
   )

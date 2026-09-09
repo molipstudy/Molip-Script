@@ -5,6 +5,7 @@ import { BRAND_LINKS } from '../../../shared/config'
 import { displayLoginId } from '../../../shared/lib'
 import { AsyncButton, Icon } from '../../../shared/ui'
 import { ProjectCredit } from '../../project-credit'
+import { InstallAppButton } from '../../../features/install-app'
 
 type MainScreen = 'home' | 'community' | 'profile'
 
@@ -48,6 +49,7 @@ export function AppShell({
           <button onClick={onAddScript}><Icon name="plus" />스크립트 추가</button>
           <button className={screen === 'community' ? 'active' : ''} onClick={onOpenCommunity}><Icon name="users" />커뮤니티</button>
         </nav>
+        <InstallAppButton compact />
         <details className="brand-links">
           <summary>몰입 스터디 서비스</summary>
           {BRAND_LINKS.map((link) => <a key={link.label} href={link.href} target="_blank" rel="noreferrer">{link.label}</a>)}
