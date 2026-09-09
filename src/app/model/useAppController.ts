@@ -1644,8 +1644,8 @@ export function useAppController() {
   }
 
   const saveCurrentDictationProgress = async () => {
-    if (!selectedScript || !dictationQuestions.length) return
-    await upsertActiveDictation(selectedScript.id, dictationMode, {
+    if (!selectedScript || !dictationQuestions.length) return false
+    return upsertActiveDictation(selectedScript.id, dictationMode, {
       questions: dictationQuestions,
       answersById,
       gradesByIndex: Object.fromEntries(

@@ -42,7 +42,7 @@ export function DictationPage(props: DictationPageProps) {
     <section className="dictation-page">
       <div className="study-header">
         <button onClick={() => void onMove(-1)} disabled={index <= 0 || done}><Icon name="back" /><span className="sr-only">이전 문장</span></button>
-        <div><strong>받아쓰기</strong><span>진행 {Math.min(index + 1, total)} / {total} · 정답 {correctCount} · 오답 {wrongCount} · 남은 {Math.max(0, total - solvedCount)}</span></div>
+        <div><strong className="mobile-relocated">받아쓰기</strong><span>진행 {Math.min(index + 1, total)} / {total} · 정답 {correctCount} · 오답 {wrongCount} · 남은 {Math.max(0, total - solvedCount)}</span></div>
         <button onClick={() => void onMove(1)} disabled={index >= total - 1 || done}><Icon name="arrow" /><span className="sr-only">다음 문장</span></button>
       </div>
 
@@ -104,7 +104,7 @@ export function DictationPage(props: DictationPageProps) {
           <div className="button-row">
             <AsyncButton className="primary-btn" onAction={onPrimary}><Icon name={grade ? 'arrow' : 'check'} />{grade ? (index === total - 1 ? '결과 보기' : '다음 문장') : '채점하기'}</AsyncButton>
             <IconButton icon="reset" label="이 문장 입력 초기화" onClick={onReset} disabled={Boolean(grade) || !blanks.length} />
-            <AsyncButton className="exit-study" onAction={onSaveExit}><Icon name="logout" />저장 후 나가기</AsyncButton>
+            <AsyncButton className="exit-study mobile-relocated" onAction={onSaveExit}><Icon name="logout" />저장 후 나가기</AsyncButton>
           </div>
         </section>
       )}

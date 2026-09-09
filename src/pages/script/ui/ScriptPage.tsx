@@ -32,9 +32,9 @@ export function ScriptPage({
   return (
     <section className="script-detail-page">
       <div className="script-hero">
-        <div><button className="text-btn" onClick={onBack}><Icon name="back" />내 스크립트</button><h1>{script.title}</h1><p>문장 {items.length}개 · 최근 열람 {formatDateTime(script.lastOpenedAt)}</p></div>
+        <div><button className="text-btn mobile-relocated" onClick={onBack}><Icon name="back" />내 스크립트</button><h1 className="mobile-relocated">{script.title}</h1><p>문장 {items.length}개 · 최근 열람 {formatDateTime(script.lastOpenedAt)}</p></div>
         <div className="script-actions">
-          <IconButton icon="edit" label="스크립트 수정" onClick={onEdit} />
+          <IconButton className="mobile-relocated" icon="edit" label="스크립트 수정" onClick={onEdit} />
           <button onClick={onOpenHistory}><Icon name="history" />학습 내역 <span className="count-badge">{historyCount}</span></button>
           <button className="primary-btn jumbo-btn" onClick={onOpenStudy}><Icon name="play" />학습하기</button>
         </div>

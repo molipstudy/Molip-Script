@@ -12,6 +12,7 @@ type AppShellProps = {
   screen: Screen
   user: User
   syncError: string
+  mobileHeader?: ReactNode
   studyDialog?: ReactNode
   children: ReactNode
   onNavigate: (screen: MainScreen) => Promise<unknown>
@@ -24,6 +25,7 @@ export function AppShell({
   screen,
   user,
   syncError,
+  mobileHeader,
   studyDialog,
   children,
   onNavigate,
@@ -35,7 +37,7 @@ export function AppShell({
   const libraryActive = ['home', 'script', 'history', 'result', 'flashcard', 'dictation'].includes(screen)
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${mobileHeader ? 'mobile-detail-layout' : ''}`}>
       <aside className="sidebar">
         <button className="brand-button" onClick={() => void onNavigate('home')}>
           <img src="/logo/logo.png" alt="몰입 스터디" />
@@ -63,9 +65,9 @@ export function AppShell({
 
       <main className={`workspace ${screen === 'flashcard' || screen === 'dictation' ? 'focus-workspace' : ''}`}>
         <header className="mobile-header">
-          <button className="brand-button" onClick={() => void onNavigate('home')}>
+          {mobileHeader ?? <button className="brand-button" onClick={() => void onNavigate('home')}>
             <img src="/logo/logo.png" alt="몰입 스터디" /><span>몰입 스크립트</span>
-          </button>
+          </button>}
         </header>
         {syncError && <p className="sync-error">{syncError}</p>}
         <div className="screen-content" key={screen}>{children}</div>

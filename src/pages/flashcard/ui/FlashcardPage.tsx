@@ -78,11 +78,11 @@ export function FlashcardPage(props: FlashcardPageProps) {
     <section className="study-page">
       <div className="study-header">
         <div className="study-header-actions">
-          <IconButton icon="back" label="스크립트로 돌아가기" onClick={onBack} />
-          <IconButton icon="settings" label="학습 설정" onClick={onOpenSettings} />
+          <IconButton className="mobile-relocated" icon="back" label="스크립트로 돌아가기" onClick={onBack} />
+          <IconButton className="mobile-relocated" icon="settings" label="학습 설정" onClick={onOpenSettings} />
           <button onClick={() => void onMove(-1)} disabled={index <= 0 || wordPickerOpen || done}><Icon name="back" /><span className="sr-only">이전 카드</span></button>
         </div>
-        <div><strong>플래시카드</strong><span>{Math.min(index + 1, queue.length)} / {queue.length}</span></div>
+        <div><strong className="mobile-relocated">플래시카드</strong><span>{Math.min(index + 1, queue.length)} / {queue.length}</span></div>
         <div className="study-header-actions right">
           <button onClick={() => void onMove(1)} disabled={index >= queue.length - 1 || wordPickerOpen || done}><Icon name="arrow" /><span className="sr-only">다음 카드</span></button>
           <label className="toggle-line"><input type="checkbox" checked={trackWords} onChange={(event) => void onTrackWordsChange(event.target.checked)} />단어 기록</label>

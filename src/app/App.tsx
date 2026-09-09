@@ -4,7 +4,7 @@ import { useAppController } from './model/useAppController'
 import { AuthPage, AppLoadingPage, SupabaseSetupPage } from '../pages/auth'
 import { StudySettingsDialog } from '../features/learning-settings'
 import { AppShell } from '../widgets/navigation'
-import { LoadingSkeleton } from '../shared/ui'
+import { AsyncButton, Icon, IconButton, LoadingSkeleton } from '../shared/ui'
 
 const CommunityPage = lazy(() => import('../pages/community').then((module) => ({ default: module.CommunityPage })))
 const DictationPage = lazy(() => import('../pages/dictation').then((module) => ({ default: module.DictationPage })))
@@ -170,11 +170,43 @@ function App() {
     )
   }
 
+  const exitStudy = async () => {
+    if (screen === 'dictation' && !isDictationDone) {
+      const saved = await saveCurrentDictationProgress()
+      if (!saved) return
+    }
+    if (screen === 'flashcard' && flashIndex < flashQueue.length) {
+      const saved = await saveActiveFlashcard(flashcardState())
+      if (!saved) return
+    }
+    setScreen('script')
+  }
+  const mobileHeader = selectedScript && ['script', 'flashcard', 'dictation'].includes(screen) ? (
+    <>
+      {screen === 'script' && <IconButton icon="back" label="내 스크립트로 돌아가기" onClick={() => setScreen('home')} />}
+      <div className="mobile-page-title">
+        {screen !== 'script' && <span>{screen === 'flashcard' ? '플래시카드' : '받아쓰기'}</span>}
+        <h1 title={selectedScript.title}>{selectedScript.title}</h1>
+      </div>
+      <div className="mobile-page-actions">
+        {screen === 'script' && <IconButton icon="edit" label="스크립트 수정" onClick={() => openEditor(selectedScript)} />}
+        {screen === 'flashcard' && <IconButton icon="settings" label="학습 설정" onClick={() => setStudyModalOpen(true)} />}
+        {screen !== 'script' && (
+          <AsyncButton className="mobile-study-exit" onAction={exitStudy}>
+            <Icon name="logout" />
+            {(screen === 'dictation' ? isDictationDone : flashIndex >= flashQueue.length) ? '나가기' : '저장 후 나가기'}
+          </AsyncButton>
+        )}
+      </div>
+    </>
+  ) : undefined
+
   const shell = (content: React.ReactNode) => (
     <AppShell
       screen={screen}
       user={user}
       syncError={syncError}
+      mobileHeader={mobileHeader}
       onNavigate={navigateMain}
       onAddScript={() => openEditor()}
       onOpenCommunity={() => {
@@ -337,7 +369,7 @@ function App() {
         wordPickerOpen={wordPickerOpen}
         pendingIndex={pendingFlashIndex}
         selectedWords={selectedWords}
-        onBack={() => void saveActiveFlashcard(flashcardState()).then((saved) => { if (saved) setScreen('script') })}
+        onBack={() => void exitStudy()}
         onOpenSettings={() => setStudyModalOpen(true)}
         onMove={moveFlashcard}
         onTrackWordsChange={async (checked) => {
@@ -382,10 +414,7 @@ function App() {
         onBlankEnter={handleBlankEnter}
         onPrimary={currentGrade ? goNextDictation : gradeCurrent}
         onReset={resetCurrentAnswers}
-        onSaveExit={async () => {
-          await saveCurrentDictationProgress()
-          setScreen('script')
-        }}
+        onSaveExit={exitStudy}
       />,
     )
   }
