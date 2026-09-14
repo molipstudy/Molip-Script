@@ -4,6 +4,7 @@ export type CommunityScript = {
   ownerLoginId: string
   sourceScriptId: string
   title: string
+  excludedWords: string[]
   rawText: string
   sharedAt: string
 }
@@ -14,6 +15,7 @@ export type CommunityScriptRow = {
   owner_login_id: string
   source_script_id: string
   title: string
+  excluded_words?: string[]
   raw_text: string
   shared_at: string
 }

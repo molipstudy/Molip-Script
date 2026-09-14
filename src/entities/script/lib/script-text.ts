@@ -51,3 +51,23 @@ export const parseItems = (rawText: string): QuizItem[] => {
 
 export const sentenceKeyOf = (item: QuizItem, index: number) =>
   `${index}:${item.number}:${item.english.toLowerCase().replace(/\s+/g, ' ').trim()}`
+
+// Section headings between numbered sentence pairs are not study content.
+// Incomplete numbered entries still fail validation instead of disappearing.
+export const parseEditorItems = (rawText: string): QuizItem[] | null => {
+  const lines = rawText.replace(/\r/g, '').split('\n').map((line) => line.trim()).filter(Boolean)
+  const items: QuizItem[] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!/^\d+\./.test(line)) continue
+    const match = line.match(/^(\d+)\.\s*(.+)$/)
+    const english = lines[index + 1]
+    if (!match || !english || /^\d+\./.test(english) || /^\[[^\]]*]$/.test(english)) return null
+    items.push({ number: match[1], meaning: match[2], english })
+    index += 1
+  }
+  return items
+}
+
+export const serializeItems = (items: QuizItem[]) =>
+  items.map((item) => `${item.number}. ${item.meaning}\n${item.english}`).join('\n\n')

@@ -18,11 +18,12 @@ export const makeDictationQuestion = (
   sourceIndex: number,
   weakWords: Set<string>,
   blankPercent: number,
+  excludedWords: Set<string> = new Set(),
 ): DictationQuestion => {
   const tokens = item.english.split(/\s+/).filter(Boolean)
   const candidateIndexes = tokens
     .map((token, index) => ({ index, core: parseTokenParts(token).core }))
-    .filter(({ core }) => core.length > 0)
+    .filter(({ core }) => core.length > 0 && !excludedWords.has(normalizeWord(core)))
   const weakIndexes = candidateIndexes
     .filter(({ core }) => weakWords.has(normalizeWord(core)))
     .map(({ index }) => index)

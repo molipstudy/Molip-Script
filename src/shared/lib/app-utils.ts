@@ -43,6 +43,7 @@ export const errorMessageOf = (error: unknown) => {
 
 export const toFriendlyDbError = (message: string) => {
   const lowered = message.toLowerCase()
+  if (lowered.includes('excluded_words')) return '제외 단어 저장을 위해 Supabase SQL Editor에서 script-editor-upgrade.sql을 실행해 주세요.'
   if (lowered.includes('pgrst002') || lowered.includes('schema cache')) {
     return 'Supabase Data API의 Exposed schemas에 삭제된 스키마가 남아 있습니다. `supabase.sql`을 실행한 뒤 Data API 설정에 현재 스키마가 포함되어 있는지 확인해 주세요.'
   }

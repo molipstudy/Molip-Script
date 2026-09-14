@@ -7,6 +7,7 @@ export type QuizItem = {
 export type ScriptRecord = {
   id: string
   title: string
+  excludedWords: string[]
   rawText: string
   createdAt: string
   updatedAt: string
@@ -36,6 +37,7 @@ export type WordStat = {
 export type ScriptRow = {
   id: string
   title: string
+  excluded_words?: string[]
   raw_text: string
   created_at: string
   updated_at: string

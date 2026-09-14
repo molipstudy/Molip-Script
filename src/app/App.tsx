@@ -56,6 +56,8 @@ function App() {
     editingScriptId,
     draftTitle,
     setDraftTitle,
+    draftExcludedWords,
+    setDraftExcludedWords,
     draftRawText,
     setDraftRawText,
     draftError,
@@ -294,6 +296,8 @@ function App() {
         editing={Boolean(editingScriptId)}
         title={draftTitle}
         rawText={draftRawText}
+        excludedWords={draftExcludedWords}
+        onExcludedWordsChange={setDraftExcludedWords}
         error={draftError}
         onTitleChange={setDraftTitle}
         onRawTextChange={setDraftRawText}

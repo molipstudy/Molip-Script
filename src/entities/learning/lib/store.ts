@@ -59,6 +59,7 @@ export const normalizeStore = (
       id: row.id,
       title: row.title,
       rawText: row.raw_text,
+      excludedWords: row.excluded_words ?? [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       lastOpenedAt: row.last_opened_at,

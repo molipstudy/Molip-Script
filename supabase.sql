@@ -28,6 +28,7 @@ create table if not exists molip_script.scripts (
   owner_id uuid not null references auth.users(id) on delete cascade,
   title text not null,
   raw_text text not null,
+  excluded_words text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   last_opened_at timestamptz not null default now()
@@ -42,6 +43,7 @@ create table if not exists molip_script.community_scripts (
   source_script_id text not null,
   title text not null,
   raw_text text not null,
+  excluded_words text[] not null default '{}',
   shared_at timestamptz not null default now(),
   unique (owner_id, source_script_id)
 );
@@ -110,6 +112,8 @@ create table if not exists molip_script.active_quizzes (
 );
 
 -- Safe migrations for projects that already have the tables above.
+alter table molip_script.scripts add column if not exists excluded_words text[] not null default '{}';
+alter table molip_script.community_scripts add column if not exists excluded_words text[] not null default '{}';
 alter table molip_script.sentence_stats
   add column if not exists starred boolean not null default false;
 alter table molip_script.active_quizzes

@@ -82,6 +82,7 @@ export function useAppController() {
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftRawText, setDraftRawText] = useState('')
+  const [draftExcludedWords, setDraftExcludedWords] = useState<string[]>([])
   const [draftError, setDraftError] = useState('')
 
   const [studyModalOpen, setStudyModalOpen] = useState(false)
@@ -151,7 +152,7 @@ export function useAppController() {
     try {
       const scriptsResult = await supabase
         .from('scripts')
-        .select('id,title,raw_text,created_at,updated_at,last_opened_at')
+        .select('*')
         .order('updated_at', { ascending: false })
       if (scriptsResult.error) throw scriptsResult.error
 
@@ -250,7 +251,7 @@ export function useAppController() {
     try {
     const result = await supabase
       .from('community_scripts')
-      .select('id,owner_id,owner_login_id,source_script_id,title,raw_text,shared_at')
+      .select('*')
       .order('shared_at', { ascending: false })
     if (result.error) {
       setSyncError(`커뮤니티 불러오기 실패: ${toFriendlyDbError(result.error.message)}`)
@@ -263,6 +264,7 @@ export function useAppController() {
       sourceScriptId: row.source_script_id,
       title: row.title,
       rawText: row.raw_text,
+      excludedWords: row.excluded_words ?? [],
       sharedAt: row.shared_at,
     })))
     } catch {
@@ -604,11 +606,12 @@ export function useAppController() {
     setEditingScriptId(script?.id ?? null)
     setDraftTitle(script?.title ?? '')
     setDraftRawText(script?.rawText ?? '')
+    setDraftExcludedWords(script?.excludedWords ?? [])
     setDraftError('')
     setScreen('editor')
   }
 
-  const saveScript = async () => {
+  const saveScript = async (excludedWords = draftExcludedWords) => {
     if (!supabase) return
     const title = draftTitle.trim()
     const rawText = draftRawText.trim()
@@ -630,6 +633,7 @@ export function useAppController() {
         owner_id: ownerId,
         title,
         raw_text: rawText,
+        excluded_words: excludedWords,
         updated_at: timestamp,
         last_opened_at: timestamp,
       }
@@ -639,6 +643,7 @@ export function useAppController() {
             .update({
               title: payload.title,
               raw_text: payload.raw_text,
+              excluded_words: payload.excluded_words,
               updated_at: payload.updated_at,
               last_opened_at: payload.last_opened_at,
             })
@@ -655,7 +660,7 @@ export function useAppController() {
         scripts: editingScriptId
           ? prev.scripts.map((script) =>
               script.id === editingScriptId
-                ? { ...script, title, rawText, updatedAt: timestamp, lastOpenedAt: timestamp }
+                ? { ...script, title, rawText, excludedWords, updatedAt: timestamp, lastOpenedAt: timestamp }
                 : script,
             )
           : [
@@ -663,6 +668,7 @@ export function useAppController() {
                 id: scriptId,
                 title,
                 rawText,
+                excludedWords,
                 createdAt: timestamp,
                 updatedAt: timestamp,
                 lastOpenedAt: timestamp,
@@ -712,7 +718,7 @@ export function useAppController() {
     const timestamp = nowIso()
     const { error } = await supabase.from('community_scripts').insert({
       id: makeId(), owner_id: user.id, owner_login_id: displayLoginId(user),
-      source_script_id: script.id, title: script.title, raw_text: script.rawText, shared_at: timestamp,
+      source_script_id: script.id, title: script.title, raw_text: script.rawText, excluded_words: script.excludedWords, shared_at: timestamp,
     })
     if (error) {
       setSyncError(error.code === '23505' ? '이미 공유 중인 스크립트입니다.' : `공유 실패: ${toFriendlyDbError(error.message)}`)
@@ -745,13 +751,13 @@ export function useAppController() {
     const timestamp = nowIso()
     const scriptId = makeId()
     const { error } = await supabase.from('scripts').insert({
-      id: scriptId, owner_id: user.id, title: shared.title, raw_text: shared.rawText,
+      id: scriptId, owner_id: user.id, title: shared.title, raw_text: shared.rawText, excluded_words: shared.excludedWords,
       created_at: timestamp, updated_at: timestamp, last_opened_at: timestamp,
     })
     if (error) setSyncError(`내 계정으로 복사 실패: ${toFriendlyDbError(error.message)}`)
     else {
       setStore((prev) => ({ ...prev, scripts: [{
-        id: scriptId, title: shared.title, rawText: shared.rawText, createdAt: timestamp,
+        id: scriptId, title: shared.title, rawText: shared.rawText, excludedWords: shared.excludedWords, createdAt: timestamp,
         updatedAt: timestamp, lastOpenedAt: timestamp,
       }, ...prev.scripts] }))
       setSelectedScriptId(null)
@@ -1390,8 +1396,12 @@ export function useAppController() {
       return
     }
     const questions = sourceIndexes.map((index) =>
-      makeDictationQuestion(selectedItems[index], index, weakWords, dictationBlankPercent),
-    )
+      makeDictationQuestion(selectedItems[index], index, weakWords, dictationBlankPercent, new Set(selectedScript.excludedWords)),
+    ).filter((question) => collectBlanks(question).length > 0)
+    if (!questions.length) {
+      setStudyError('제외 단어를 적용한 뒤 출제할 단어가 없습니다. 에디터에서 제외 단어를 확인해 주세요.')
+      return
+    }
     const initialAnswers = createAnswers(questions)
     const state: ActiveDictationState = {
       questions,
@@ -1791,6 +1801,8 @@ export function useAppController() {
     setDraftTitle,
     draftRawText,
     setDraftRawText,
+    draftExcludedWords,
+    setDraftExcludedWords,
     draftError,
     studyModalOpen,
     setStudyModalOpen,
