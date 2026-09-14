@@ -71,3 +71,43 @@ export const parseEditorItems = (rawText: string): QuizItem[] | null => {
 
 export const serializeItems = (items: QuizItem[]) =>
   items.map((item) => `${item.number}. ${item.meaning}\n${item.english}`).join('\n\n')
+
+// Stored in excluded_words as versioned occurrence keys, never as global words.
+// The sentence text guard prevents old positions from excluding newly edited text.
+export const exclusionKeyOf = (item: QuizItem, sentenceIndex: number, tokenIndex: number) =>
+  `@token/v1/${JSON.stringify([sentenceIndex, item.english.trim().replace(/\s+/g, ' '), tokenIndex])}`
+
+export const validExclusionKeys = (items: QuizItem[], keys: string[]) => {
+  const selected = new Set(keys)
+  return items.flatMap((item, sentenceIndex) => item.english.split(/\s+/).filter(Boolean)
+    .flatMap((token, tokenIndex) => {
+      const key = exclusionKeyOf(item, sentenceIndex, tokenIndex)
+      return parseTokenParts(token).core && selected.has(key) ? [key] : []
+    }))
+}
+
+// Direct input is a batch selection of exact tokens in the current draft.
+// In particular, "Tim:" does not match "Tim" in dialogue.
+export const exclusionKeysForTokens = (items: QuizItem[], input: string) => {
+  const tokens = new Set(input.split(/[\s,;]+/).filter(Boolean).map((token) => token.toLowerCase()))
+  return items.flatMap((item, sentenceIndex) => item.english.split(/\s+/).filter(Boolean)
+    .flatMap((token, tokenIndex) => tokens.has(token.toLowerCase()) && parseTokenParts(token).core
+      ? [exclusionKeyOf(item, sentenceIndex, tokenIndex)] : []))
+}
+
+export const remapExclusionKeys = (before: (QuizItem & { id?: string })[], after: (QuizItem & { id?: string })[], keys: string[]) => {
+  const selected = new Set(keys)
+  const textOf = (item: QuizItem) => item.english.trim().replace(/\s+/g, ' ')
+  return after.flatMap((item, nextIndex) => {
+    const text = textOf(item)
+    // Card IDs survive insertion/reordering. Raw edits can only match unique sentences safely.
+    const previousIndex = item.id
+      ? before.findIndex((previous) => previous.id === item.id && textOf(previous) === text)
+      : before.filter((previous) => textOf(previous) === text).length === 1 && after.filter((next) => textOf(next) === text).length === 1
+        ? before.findIndex((previous) => textOf(previous) === text) : -1
+    if (previousIndex < 0) return []
+    return item.english.split(/\s+/).filter(Boolean).flatMap((_, tokenIndex) =>
+      selected.has(exclusionKeyOf(before[previousIndex], previousIndex, tokenIndex))
+        ? [exclusionKeyOf(item, nextIndex, tokenIndex)] : [])
+  })
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { normalizeWord, parseTokenParts } from '../../../entities/script'
+import { exclusionKeyOf, parseTokenParts, validExclusionKeys } from '../../../entities/script'
 import type { QuizItem } from '../../../entities/script'
 import { Icon, IconButton, Modal } from '../../../shared/ui'
 
@@ -11,7 +11,7 @@ type ExcludedWordsDialogProps = {
 }
 
 export function ExcludedWordsDialog({ items, excludedWords, onClose, onApply }: ExcludedWordsDialogProps) {
-  const [selected, setSelected] = useState(() => new Set(excludedWords))
+  const [selected, setSelected] = useState(() => new Set(validExclusionKeys(items, excludedWords)))
   const toggle = (word: string) => setSelected((previous) => {
     const next = new Set(previous)
     if (next.has(word)) next.delete(word)
@@ -25,20 +25,21 @@ export function ExcludedWordsDialog({ items, excludedWords, onClose, onApply }: 
         <div><p className="eyebrow">Dictation Settings</p><h2>본문에서 제외 단어 선택</h2></div>
         <IconButton icon="close" label="제외 단어 선택 닫기" onClick={onClose} />
       </header>
-      <p className="editor-hint">단어를 누르면 빈칸에서 제외돼요. 다시 누르면 해제됩니다. 같은 단어는 본문 전체에 함께 적용되며, 대소문자와 주변 문장부호는 구분하지 않아요.</p>
+      <p className="editor-hint">단어를 누르면 빈칸에서 제외돼요. 다시 누르면 해제됩니다. 누른 위치만 제외돼요. 같은 문장이나 다른 문장에 같은 단어가 있어도 함께 제외되지 않아요.</p>
       <div className="exclusion-body">
         {items.length ? items.map((item, index) => <article className="exclusion-sentence" key={index}>
           <p className="exclusion-meaning"><strong>{item.number}.</strong> {item.meaning || '한글 뜻을 입력하지 않은 문장'}</p>
           <div className="exclusion-tokens" lang="en">
             {item.english.split(/\s+/).filter(Boolean).map((token, tokenIndex) => {
-              const word = normalizeWord(parseTokenParts(token).core)
-              const excluded = selected.has(word)
+              const word = parseTokenParts(token).core
+              const key = exclusionKeyOf(item, index, tokenIndex)
+              const excluded = selected.has(key)
               return word ? <button
                 key={tokenIndex}
                 className="exclusion-token"
                 aria-pressed={excluded}
                 aria-label={`${token} ${excluded ? '제외 해제' : '받아쓰기에서 제외'}`}
-                onClick={() => toggle(word)}
+                onClick={() => toggle(key)}
               >{token}{excluded && <Icon name="check" />}</button> : <span key={tokenIndex}>{token}</span>
             })}
           </div>

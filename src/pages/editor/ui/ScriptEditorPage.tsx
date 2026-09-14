@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState } from 'react'
-import { normalizeWord, parseEditorItems, serializeItems } from '../../../entities/script'
+import { exclusionKeysForTokens, parseEditorItems, remapExclusionKeys, serializeItems, validExclusionKeys } from '../../../entities/script'
 import type { QuizItem } from '../../../entities/script'
 import { AsyncButton, Icon, IconButton } from '../../../shared/ui'
 import { moveCardToGap } from '../lib/reorder-cards'
@@ -36,6 +36,7 @@ export function ScriptEditorPage({ editing, title, rawText, excludedWords, error
   const cardRawSnapshot = useRef<string | null>(null)
   const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const updateCards = (next: Card[]) => {
+    onExcludedWordsChange(remapExclusionKeys(cards, next, excludedWords))
     setCards(next)
     onRawTextChange(serializeItems(next))
     setLocalError('')
@@ -79,7 +80,9 @@ export function ScriptEditorPage({ editing, title, rawText, excludedWords, error
     }
     setMode(next)
   }
-  const pendingWords = () => Array.from(new Set([...excludedWords, ...wordInput.split(/[\s,;]+/).map(normalizeWord).filter(Boolean)]))
+  const currentItems = mode === 'cards' ? cards : parseEditorItems(rawText) ?? []
+  const currentExclusions = validExclusionKeys(currentItems, excludedWords)
+  const pendingWords = () => Array.from(new Set([...currentExclusions, ...exclusionKeysForTokens(currentItems, wordInput)]))
   const addWords = () => {
     onExcludedWordsChange(pendingWords())
     setWordInput('')
@@ -148,10 +151,17 @@ export function ScriptEditorPage({ editing, title, rawText, excludedWords, error
           </article>
           {insertButton(index + 1)}
         </Fragment>)}
-      </div> : <label className="field"><span>본문 · 번호. 한글 뜻 다음 줄에 영어 문장을 입력하세요</span><textarea value={rawText} onChange={(event) => { onRawTextChange(event.target.value); setLocalError(''); setNotice('') }} spellCheck={false} placeholder={'1. 한글 뜻\nEnglish sentence.\n\n2. 한글 뜻\nEnglish sentence.'} /></label>}
+      </div> : <label className="field"><span>본문 · 번호. 한글 뜻 다음 줄에 영어 문장을 입력하세요</span><textarea value={rawText} onChange={(event) => {
+        const nextRaw = event.target.value
+        const before = parseEditorItems(rawText) ?? []
+        const after = parseEditorItems(nextRaw) ?? []
+        onExcludedWordsChange(before.length === after.length && before.every((item, index) => item.english === after[index].english)
+          ? validExclusionKeys(after, excludedWords) : remapExclusionKeys(before, after, excludedWords))
+        onRawTextChange(nextRaw); setLocalError(''); setNotice('')
+      }} spellCheck={false} placeholder={'1. 한글 뜻\nEnglish sentence.\n\n2. 한글 뜻\nEnglish sentence.'} /></label>}
       <section className="editor-exclusions" aria-labelledby="exclusions-heading">
         <h2 id="exclusions-heading">받아쓰기 제외 단어</h2>
-        <p className="editor-hint">본문에서 단어를 눌러 빈칸 출제에서 제외할 수 있어요.</p>
+        <p className="editor-hint">본문에서 선택한 위치만 빈칸 출제에서 제외돼요. 같은 단어의 다른 위치는 그대로 출제됩니다.</p>
         <button className="exclusion-open-button" onClick={() => {
           const items = mode === 'cards' ? cards : parseEditorItems(rawText)
           if (!items) {
@@ -161,14 +171,14 @@ export function ScriptEditorPage({ editing, title, rawText, excludedWords, error
           addWords()
           setLocalError('')
           setExclusionItems(items)
-        }}><Icon name="edit" />본문에서 제외 단어 선택<span>{excludedWords.length}개 제외</span></button>
+        }}><Icon name="edit" />본문에서 제외 단어 선택<span>{currentExclusions.length}곳 제외</span></button>
         <div className="exclusion-repeat-settings">
           <h3>반복 표기 · 직접 입력</h3>
-          <p className="editor-hint">W:, B:처럼 반복되는 화자 표기나 단어는 한 번에 입력하세요. 본문 전체에서 제외돼요.</p>
-          <div className="exclusion-input"><label className="field"><span>쉼표나 공백으로 구분</span><input value={wordInput} placeholder="예: W:, B:" onChange={(event) => setWordInput(event.target.value)} onBlur={addWords} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addWords() } }} /></label><button onClick={addWords}><Icon name="plus" />추가</button></div>
+          <p className="editor-hint">Tim:, Amy:처럼 반복되는 표기를 입력하면 현재 본문에서 문장부호까지 일치하는 위치만 한 번에 선택해요. Tim:을 입력해도 대화 속 Tim은 제외되지 않아요.</p>
+          <div className="exclusion-input"><label className="field"><span>쉼표나 공백으로 구분</span><input value={wordInput} placeholder="예: Tim:, Amy:, W:, B:" onChange={(event) => setWordInput(event.target.value)} onBlur={addWords} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addWords() } }} /></label><button onClick={addWords}><Icon name="plus" />추가</button></div>
         </div>
-        <div className="excluded-words">{excludedWords.map((word) => <button key={word} aria-label={`${word} 제외 해제`} onClick={() => onExcludedWordsChange(excludedWords.filter((item) => item !== word))}>{word}<Icon name="close" /></button>)}</div>
-        {!excludedWords.length && <p className="editor-hint">제외한 단어가 없어요.</p>}
+        {excludedWords.some((key) => !key.startsWith('@token/v1/')) && <p className="editor-hint">이전에 단어 전체에 적용했던 제외 설정은 더 이상 적용하지 않아요. 본문에서 제외할 위치를 다시 선택해 주세요.</p>}
+        <div className="exclusion-selection-summary"><p className="editor-hint">{currentExclusions.length ? `${currentExclusions.length}곳 제외 · 본문 선택창에서 확인·해제할 수 있어요.` : '제외한 위치가 없어요.'}</p>{currentExclusions.length > 0 && <button onClick={() => onExcludedWordsChange([])}>전체 해제</button>}</div>
       </section>
       {exclusionItems !== null && <ExcludedWordsDialog
         items={exclusionItems}

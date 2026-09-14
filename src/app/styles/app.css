@@ -1907,3 +1907,5 @@ input[type='checkbox'] { accent-color: var(--primary); width: 16px; height: 16px
 .sentence-editor.is-sorting { user-select: none; }
 .sentence-card.is-dragging { border-color: var(--primary); background: #f7f5ff; opacity: .65; }
 .insert-sentence.is-drop-target { background: #eee9fc; color: var(--primary); box-shadow: inset 0 2px var(--primary), inset 0 -2px var(--primary); }
+.exclusion-selection-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.exclusion-selection-summary button { min-height: 30px; padding: 4px 10px; font-size: 12px; }

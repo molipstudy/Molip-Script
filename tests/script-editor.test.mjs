@@ -11,7 +11,7 @@ const moduleUrl = async (path, replacements = []) => {
   }).outputText).toString('base64')}`
 }
 const textUrl = await moduleUrl('../src/entities/script/lib/script-text.ts')
-const { parseItems, parseEditorItems, serializeItems, normalizeWord } = await import(textUrl)
+const { parseItems, parseEditorItems, serializeItems, exclusionKeyOf, exclusionKeysForTokens, validExclusionKeys, remapExclusionKeys } = await import(textUrl)
 const { makeDictationQuestion, collectBlanks } = await import(await moduleUrl(
   '../src/features/dictation/lib/dictation.ts', [["'../../../entities/script'", JSON.stringify(textUrl)]],
 ))
@@ -29,19 +29,20 @@ test('conversion still rejects incomplete numbered entries', () => {
   }
 })
 
-test('excluded words never become blanks even when marked weak or blank ratio is 100%', () => {
+test('only the chosen occurrence is excluded, including repeated words in the same sentence', () => {
   const item = { number: '1', meaning: '서울', english: 'Seoul, SEOUL! lovely Seoul.' }
-  const excluded = new Set([normalizeWord('Seoul!')])
+  const excluded = new Set([exclusionKeyOf(item, 0, 0)])
   for (let i = 0; i < 50; i += 1) {
     const question = makeDictationQuestion(item, 0, new Set(['seoul']), 100, excluded)
-    assert.deepEqual(collectBlanks(question).map((blank) => blank.answer), ['lovely'])
-    assert.equal(question.units.filter((unit) => unit.kind === 'text').length, 3)
+    assert.deepEqual(collectBlanks(question).map((blank) => blank.answer), ['SEOUL', 'lovely', 'Seoul'])
   }
 })
 
 test('fully excluded and punctuation-only sentences contain no blanks', () => {
   for (const english of ['Seoul, SEOUL!', '... —']) {
-    assert.equal(collectBlanks(makeDictationQuestion({ number: '1', meaning: '뜻', english }, 0, new Set(['seoul']), 100, new Set(['seoul']))).length, 0)
+    const item = { number: '1', meaning: '뜻', english }
+    const keys = new Set([exclusionKeyOf(item, 0, 0), exclusionKeyOf(item, 0, 1)])
+    assert.equal(collectBlanks(makeDictationQuestion(item, 0, new Set(['seoul']), 100, keys)).length, 0)
   }
 })
 
@@ -93,4 +94,35 @@ test('moving cards to the start, middle and end preserves sentence pairs and upd
   for (const [id, gap] of [['a', 0], ['a', 1], ['d', 4], ['missing', 0], ['a', -1], ['a', 5]]) {
     assert.equal(moveCardToGap(cards, id, gap), cards)
   }
+})
+
+
+test('speaker labels and dialogue names are independently selected; batch selection matches punctuation', () => {
+  const items = [
+    { id: 'a', number: '1', meaning: '팀', english: 'Tim: Hello Amy' },
+    { id: 'b', number: '2', meaning: '에이미', english: 'Amy: Hello Tim' },
+    { id: 'c', number: '3', meaning: '다시 팀', english: 'Tim: Hello Amy' },
+  ]
+  const keys = exclusionKeysForTokens(items, 'Tim:, Amy:')
+  assert.equal(keys.length, 3)
+  items.forEach((item, index) => {
+    const blanks = collectBlanks(makeDictationQuestion(item, index, new Set(['tim', 'amy']), 100, new Set(keys)))
+    assert.deepEqual(blanks.map((blank) => blank.answer), ['Hello', index === 1 ? 'Tim' : 'Amy'])
+  })
+  const one = [exclusionKeyOf(items[0], 0, 0)]
+  assert.equal(collectBlanks(makeDictationQuestion(items[2], 2, new Set(), 100, new Set(one))).length, 3)
+  assert.deepEqual(validExclusionKeys(items, ['tim', 'amy', ...one]), one)
+  assert.equal(collectBlanks(makeDictationQuestion(items[0], 0, new Set(), 100, new Set(['tim']))).length, 3)
+
+  // Duplicate sentence text is safe when card IDs identify the selected card.
+  const reordered = [items[2], items[1], items[0]]
+  assert.deepEqual(remapExclusionKeys(items, reordered, one), [exclusionKeyOf(items[0], 2, 0)])
+  const edited = [{ ...items[0], english: 'Amy: Hello Tim' }, items[1], items[2]]
+  assert.deepEqual(remapExclusionKeys(items, edited, one), [])
+  assert.deepEqual(validExclusionKeys(edited, one), [])
+  const removed = items.slice(1)
+  assert.deepEqual(remapExclusionKeys(items, removed, one), [])
+  const uniqueSelection = [exclusionKeyOf(items[1], 1, 0)]
+  const rawItems = items.map(({ number, meaning, english }) => ({ number, meaning, english }))
+  assert.deepEqual(remapExclusionKeys(rawItems, [rawItems[1], rawItems[0], rawItems[2]], uniqueSelection), [exclusionKeyOf(items[1], 0, 0)])
 })

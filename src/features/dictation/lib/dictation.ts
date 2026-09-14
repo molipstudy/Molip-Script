@@ -1,4 +1,4 @@
-import { normalizeAnswer, normalizeWord, parseTokenParts, sentenceKeyOf } from '../../../entities/script'
+import { exclusionKeyOf, normalizeAnswer, normalizeWord, parseTokenParts, sentenceKeyOf } from '../../../entities/script'
 import type { QuizItem } from '../../../entities/script'
 import type { BlankUnit, DictationGrade, DictationQuestion, SentenceUnit } from '../../../entities/learning'
 
@@ -23,7 +23,7 @@ export const makeDictationQuestion = (
   const tokens = item.english.split(/\s+/).filter(Boolean)
   const candidateIndexes = tokens
     .map((token, index) => ({ index, core: parseTokenParts(token).core }))
-    .filter(({ core }) => core.length > 0 && !excludedWords.has(normalizeWord(core)))
+    .filter(({ core, index }) => core.length > 0 && !excludedWords.has(exclusionKeyOf(item, sourceIndex, index)))
   const weakIndexes = candidateIndexes
     .filter(({ core }) => weakWords.has(normalizeWord(core)))
     .map(({ index }) => index)
