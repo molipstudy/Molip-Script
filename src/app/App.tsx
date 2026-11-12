@@ -1,5 +1,13 @@
+import { PublisherPage } from '../pages/publisher/ui/PublisherPage'
+import { ContinuePage } from '../pages/home/ui/ContinuePage'
 import { lazy, Suspense } from 'react'
 import './styles/app.css'
+import { InstallAppBanner } from '../features/install-app'
+import { DashboardPage } from '../pages/home/ui/DashboardPage'
+import { LandingPage } from '../pages/home/ui/LandingPage'
+import { MaskingPage } from '../pages/masking/ui/MaskingPage'
+import { Guide } from '../features/guide/Guide'
+import { TRIAL_ID } from '../entities/script/model/trial'
 import { useAppController } from './model/useAppController'
 import { AuthPage, AppLoadingPage, SupabaseSetupPage } from '../pages/auth'
 import { StudySettingsDialog } from '../features/learning-settings'
@@ -19,6 +27,7 @@ const ScriptPage = lazy(() => import('../pages/script').then((module) => ({ defa
 function App() {
   const {
     hasSupabase,
+    loginRequired, setLoginRequired, requestLogin, visibleTokens, setMaskTokens, recordMaskWords, maskingGrades,
     screen,
     setScreen,
     user,
@@ -39,6 +48,7 @@ function App() {
     syncError,
     store,
     communityScripts,
+    publisherId, setPublisherId,
     selectedCommunityId,
     setSelectedCommunityId,
     sharePickerOpen,
@@ -150,53 +160,35 @@ function App() {
     return <AppLoadingPage view={loadingView} />
   }
 
-  if (!user || screen === 'auth') {
-    return (
-      <AuthPage
-        mode={authMode}
-        loginId={loginId}
-        email={signupEmail}
-        password={password}
-        error={authError}
-        notice={authNotice}
-        onModeChange={(mode) => {
-          setAuthMode(mode)
-          setAuthError('')
-          setAuthNotice('')
-        }}
-        onLoginIdChange={setLoginId}
-        onEmailChange={setSignupEmail}
-        onPasswordChange={setPassword}
-        onSubmit={handleAuth}
-      />
-    )
-  }
-
   const exitStudy = async () => {
     if (screen === 'dictation' && !isDictationDone) {
       const saved = await saveCurrentDictationProgress()
       if (!saved) return
     }
-    if (screen === 'flashcard' && flashIndex < flashQueue.length) {
+    if ((screen === 'flashcard' || screen === 'masking') && flashIndex < flashQueue.length) {
       const saved = await saveActiveFlashcard(flashcardState())
       if (!saved) return
     }
     setScreen('script')
   }
-  const mobileHeader = selectedScript && ['script', 'flashcard', 'dictation'].includes(screen) ? (
+  const openStudySettings = () => {
+    if (screen === 'flashcard' || screen === 'dictation' || screen === 'masking') setStudyKind(screen)
+    setStudyModalOpen(true)
+  }
+  const mobileHeader = selectedScript && ['script', 'flashcard', 'masking', 'dictation'].includes(screen) ? (
     <>
-      {screen === 'script' && <IconButton icon="back" label="내 스크립트로 돌아가기" onClick={() => setScreen('home')} />}
+      {screen === 'script' && <IconButton icon="back" label="내 스크립트로 돌아가기" onClick={() => void navigateMain(user ? 'library' : 'home')} />}
       <div className="mobile-page-title">
-        {screen !== 'script' && <span>{screen === 'flashcard' ? '플래시카드' : '받아쓰기'}</span>}
-        <h1 title={selectedScript.title}>{selectedScript.title}</h1>
+        {screen !== 'script' && <span>{screen === 'masking' ? '마스킹 학습' : screen === 'flashcard' ? '플래시카드' : '받아쓰기'}</span>}
+        <h1 title={screen === 'script' ? undefined : selectedScript.title}>{screen === 'script' ? '스크립트 상세' : selectedScript.title}</h1>
       </div>
       <div className="mobile-page-actions">
-        {screen === 'script' && <IconButton icon="edit" label="스크립트 수정" onClick={() => openEditor(selectedScript)} />}
-        {screen === 'flashcard' && <IconButton icon="settings" label="학습 설정" onClick={() => setStudyModalOpen(true)} />}
+        {screen === 'script' && selectedScript.id !== TRIAL_ID && <IconButton icon="edit" label="스크립트 수정" onClick={() => openEditor(selectedScript)} />}
+        {screen !== 'script' && <IconButton icon="settings" label="학습 설정" onClick={openStudySettings} />}
         {screen !== 'script' && (
           <AsyncButton className="mobile-study-exit" onAction={exitStudy}>
             <Icon name="logout" />
-            {(screen === 'dictation' ? isDictationDone : flashIndex >= flashQueue.length) ? '나가기' : '저장 후 나가기'}
+            {!user || (screen === 'dictation' ? isDictationDone : flashIndex >= flashQueue.length) ? '나가기' : '저장 후 나가기'}
           </AsyncButton>
         )}
       </div>
@@ -210,7 +202,6 @@ function App() {
       syncError={syncError}
       mobileHeader={mobileHeader}
       onNavigate={navigateMain}
-      onAddScript={() => openEditor()}
       onOpenCommunity={() => {
         setSelectedCommunityId(null)
         setCommunityNotice('')
@@ -239,21 +230,51 @@ function App() {
           onBlankPercentChange={setDictationBlankPercent}
           onTrackWordsChange={setTrackFlashWords}
           onStart={async () => {
-            if (studyKind === 'flashcard') await startFlashcard()
+            if (studyKind !== 'dictation') await startFlashcard()
             else await startDictation(modeForScope(studyScope))
           }}
         />
       ) : undefined}
     >
+      {screen === 'home' && <InstallAppBanner />}
       <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
+      {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
+      {!(screen === 'home' && user) && <Guide key={screen} screen={screen} />}
+      {loginRequired && <div className="login-overlay" role="dialog" aria-modal="true" aria-label="로그인 안내"><section className="result-card"><h2>로그인이 필요한 기능이에요</h2><p>내 스크립트와 개인 학습 기록을 계정에 안전하게 보관하세요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setLoginRequired(false); setScreen('auth') }}>로그인하기</button><button onClick={() => setLoginRequired(false)}>계속 둘러보기</button></div></section></div>}
     </AppShell>
   )
 
-  if (screen === 'profile') {
-    return shell(<ProfilePage user={user} store={store} onSignOut={signOut} />)
+  if (screen === 'auth') {
+    return shell(
+      <AuthPage
+        mode={authMode}
+        loginId={loginId}
+        email={signupEmail}
+        password={password}
+        error={authError}
+        notice={authNotice}
+        onModeChange={(mode) => {
+          setAuthMode(mode)
+          setAuthError('')
+          setAuthNotice('')
+        }}
+        onLoginIdChange={setLoginId}
+        onEmailChange={setSignupEmail}
+        onPasswordChange={setPassword}
+        onSubmit={handleAuth}
+      />
+    )
   }
 
-  if (screen === 'home') {
+  if (screen === 'profile') {
+    return shell(user ? <ProfilePage user={user} store={store} onSignOut={signOut} onAbout={() => void navigateMain('about')} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
+  }
+
+  if (screen === 'home' && user) return shell(<DashboardPage onMore={() => void navigateMain('continue')} store={store} onOpen={openScript} onResume={learning => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)} onCreate={() => openEditor()} onLibrary={() => void navigateMain('library')} onCommunity={() => void navigateMain('community')} onReview={id => { openScript(id); setStudyScope('weak'); setStudyError(''); setStudyModalOpen(true) }} />)
+
+  if (screen === 'home' || screen === 'about') return shell(<LandingPage signedIn={Boolean(user)} scripts={communityScripts} onStart={() => openScript(TRIAL_ID)} onCommunity={() => void navigateMain('community')} onSelect={(id) => { setSelectedCommunityId(id); setScreen('community') }} onLogin={() => setScreen('auth')} onLibrary={() => void navigateMain('library')} />)
+
+  if (screen === 'library') {
     return shell(
       <HomePage
         scripts={sortedScripts}
@@ -265,10 +286,16 @@ function App() {
     )
   }
 
+  if (screen === 'continue' && user) return shell(<ContinuePage store={store} onOpen={openScript} onResume={learning => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)} onBack={() => void navigateMain('home')} onLibrary={() => void navigateMain('library')} />)
+
+  if (screen === 'publisher' && publisherId) return shell(<PublisherPage key={publisherId} publisherId={publisherId} userId={user?.id ?? ''} onBack={() => void navigateMain('community')} onSelect={id => { setSelectedCommunityId(id); setScreen('community') }} onLogin={() => requestLogin('publisher')} />)
+
   if (screen === 'community') {
     return shell(
       <CommunityPage
-        userId={user.id}
+        onPublisher={id => { setPublisherId(id); setScreen('publisher') }}
+        onRequireLogin={() => requestLogin('community')}
+        userId={user?.id ?? ''}
         scripts={communityScripts}
         libraryScripts={sortedScripts}
         selected={selectedCommunityScript}
@@ -281,11 +308,11 @@ function App() {
         showMeaning={showMeaning}
         onSelect={setSelectedCommunityId}
         onQueryChange={setCommunityQuery}
-        onSharePickerChange={setSharePickerOpen}
+        onSharePickerChange={(open) => { if (!user) requestLogin('community'); else setSharePickerOpen(open) }}
         onShowMeaningChange={setShowMeaning}
         onShare={shareScript}
         onUnshare={unshareScript}
-        onCopy={copyCommunityScript}
+        onCopy={(script) => { if (!user) { requestLogin('community'); return Promise.resolve() } return copyCommunityScript(script) }}
       />,
     )
   }
@@ -318,9 +345,9 @@ function App() {
         historyCount={selectedScriptSessions.length + selectedFlashcardSessions.length}
         activeLearnings={selectedActiveLearnings}
         showMeaning={showMeaning}
-        onBack={() => setScreen('home')}
-        onEdit={() => openEditor(selectedScript)}
-        onOpenHistory={() => setScreen('history')}
+        onBack={() => void navigateMain(user ? 'library' : 'home')}
+        onEdit={() => { if (!user) requestLogin('editor'); else openEditor(selectedScript) }}
+        onOpenHistory={() => user ? setScreen('history') : requestLogin('history')}
         onOpenStudy={() => setStudyModalOpen(true)}
         onShowMeaningChange={setShowMeaning}
         onResume={(learning) => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)}
@@ -360,9 +387,12 @@ function App() {
     )
   }
 
+  if (screen === 'masking' && selectedScript) return shell(<MaskingPage exitLabel={!user || selectedScript.id === TRIAL_ID ? '나가기' : '저장 후 나가기'} onOpenSettings={openStudySettings} grades={maskingGrades} items={selectedItems} stats={selectedStats} queue={flashQueue} index={flashIndex} visible={visibleTokens} onVisible={setMaskTokens} onMove={moveFlashcard} onStar={toggleSentenceStar} onBack={exitStudy} onEvaluate={advanceFlashcard} onRecordWords={async (words) => { await recordMaskWords(words) }} />)
+
   if (screen === 'flashcard' && selectedScript) {
     return shell(
       <FlashcardPage
+        exitLabel={!user || selectedScript.id === TRIAL_ID ? '나가기' : '저장 후 나가기'}
         items={selectedItems}
         stats={selectedStats}
         queue={flashQueue}
@@ -373,8 +403,8 @@ function App() {
         wordPickerOpen={wordPickerOpen}
         pendingIndex={pendingFlashIndex}
         selectedWords={selectedWords}
-        onBack={() => void exitStudy()}
-        onOpenSettings={() => setStudyModalOpen(true)}
+        onBack={exitStudy}
+        onOpenSettings={openStudySettings}
         onMove={moveFlashcard}
         onTrackWordsChange={async (checked) => {
           const saved = await saveActiveFlashcard({ ...flashcardState(), trackWords: checked })
@@ -399,6 +429,8 @@ function App() {
   if (screen === 'dictation' && selectedScript) {
     return shell(
       <DictationPage
+        exitLabel={!user || selectedScript.id === TRIAL_ID ? '나가기' : '저장 후 나가기'}
+        onOpenSettings={openStudySettings}
         questions={dictationQuestions}
         index={dictationIndex}
         answers={answersById}

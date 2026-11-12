@@ -19,6 +19,8 @@ export type SentenceStat = {
   number: string
   meaning: string
   english: string
+  maskingAttempts?: number
+  maskingWrongCount?: number
   flashcardUnknownCount: number
   dictationAttempts: number
   dictationWrongCount: number
@@ -29,7 +31,7 @@ export type SentenceStat = {
 
 export type WordStat = {
   word: string
-  source: 'dictation' | 'flashcard'
+  source: 'dictation' | 'flashcard' | 'masking'
   wrongCount: number
   lastWrongAt?: string
 }
@@ -50,6 +52,8 @@ export type SentenceStatRow = {
   number: string
   meaning: string
   english: string
+  masking_attempts?: number
+  masking_wrong_count?: number
   flashcard_unknown_count: number
   dictation_attempts: number
   dictation_wrong_count: number
@@ -61,7 +65,7 @@ export type SentenceStatRow = {
 export type WordStatRow = {
   script_id: string
   word: string
-  source: 'dictation' | 'flashcard'
+  source: 'dictation' | 'flashcard' | 'masking'
   wrong_count: number
   last_wrong_at: string | null
 }

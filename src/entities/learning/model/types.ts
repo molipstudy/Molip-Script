@@ -43,6 +43,8 @@ export type ActiveFlashcardState = {
   revealed: boolean
   unknownIndexes: number[]
   trackWords: boolean
+  visibleTokens?: number[]
+  maskingGrades?: Record<string, boolean>
 }
 
 export type DictationSessionDetail = {
@@ -62,6 +64,7 @@ export type DictationSessionRecord = {
 }
 
 export type FlashcardSessionRecord = {
+  quizType?: 'flashcard' | 'masking'
   id: string
   scriptId: string
   createdAt: string
@@ -73,7 +76,7 @@ export type FlashcardSessionRecord = {
 export type ActiveQuizRecord = {
   id: string
   scriptId: string
-  quizType: 'dictation' | 'flashcard'
+  quizType: 'dictation' | 'flashcard' | 'masking'
   mode: StudyMode
   state: ActiveDictationState | ActiveFlashcardState
   progress: number
@@ -101,6 +104,7 @@ export type DictationSessionRow = {
 }
 
 export type FlashcardSessionRow = {
+  quiz_type?: 'flashcard' | 'masking'
   id: string
   script_id: string
   created_at: string
@@ -112,7 +116,7 @@ export type FlashcardSessionRow = {
 export type ActiveQuizRow = {
   id: string
   script_id: string
-  quiz_type: 'dictation' | 'flashcard'
+  quiz_type: 'dictation' | 'flashcard' | 'masking'
   mode: StudyMode
   state: ActiveDictationState | ActiveFlashcardState
   progress: number

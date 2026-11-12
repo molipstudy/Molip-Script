@@ -1,9 +1,12 @@
+import { StudyHeader } from '../../../features/learning-settings/ui/StudyHeader'
 import type { BlankUnit, DictationGrade, DictationQuestion } from '../../../entities/learning'
 import type { QuizItem, SentenceStat } from '../../../entities/script'
 import { questionSentence } from '../../../features/dictation'
-import { AsyncButton, Icon, IconButton, Progress, StudyTip } from '../../../shared/ui'
+import { AsyncButton, Icon, IconButton, StudyTip } from '../../../shared/ui'
 
 type DictationPageProps = {
+  exitLabel: string
+  onOpenSettings: () => void
   questions: DictationQuestion[]
   index: number
   answers: Record<string, string>
@@ -39,14 +42,10 @@ export function DictationPage(props: DictationPageProps) {
   const wrongIndexes = questions.map((_, questionIndex) => questionIndex).filter((questionIndex) => grades[questionIndex] && grades[questionIndex].correct < grades[questionIndex].total)
 
   return (
-    <section className="dictation-page">
-      <div className="study-header">
-        <button onClick={() => void onMove(-1)} disabled={index <= 0 || done}><Icon name="back" /><span className="sr-only">이전 문장</span></button>
-        <div><strong className="mobile-relocated">받아쓰기</strong><span>진행 {Math.min(index + 1, total)} / {total} · 정답 {correctCount} · 오답 {wrongCount} · 남은 {Math.max(0, total - solvedCount)}</span></div>
-        <button onClick={() => void onMove(1)} disabled={index >= total - 1 || done}><Icon name="arrow" /><span className="sr-only">다음 문장</span></button>
-      </div>
-
-      <Progress value={solvedCount} total={total} />
+    <section className="dictation-page learning-page">
+      <StudyHeader title="받아쓰기" index={index} total={total} progress={solvedCount} done={done} exitLabel={props.exitLabel} onExit={onSaveExit} onSettings={props.onOpenSettings} onMove={onMove}>
+        <span>정답 {correctCount} · 오답 {wrongCount} · 남은 {Math.max(0, total - solvedCount)}</span>
+      </StudyHeader>
       {!done && <StudyTip key={grade ? 'graded-tip' : 'dictation-tip'} context={grade ? 'graded' : 'dictation'} />}
       {done ? (
         <section className="result-card">
@@ -104,7 +103,6 @@ export function DictationPage(props: DictationPageProps) {
           <div className="button-row">
             <AsyncButton className="primary-btn" onAction={onPrimary}><Icon name={grade ? 'arrow' : 'check'} />{grade ? (index === total - 1 ? '결과 보기' : '다음 문장') : '채점하기'}</AsyncButton>
             <IconButton icon="reset" label="이 문장 입력 초기화" onClick={onReset} disabled={Boolean(grade) || !blanks.length} />
-            <AsyncButton className="exit-study mobile-relocated" onAction={onSaveExit}><Icon name="logout" />저장 후 나가기</AsyncButton>
           </div>
         </section>
       )}

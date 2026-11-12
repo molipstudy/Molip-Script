@@ -1,10 +1,12 @@
+import { StudyHeader } from '../../../features/learning-settings/ui/StudyHeader'
 import { useEffect, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { QuizItem, SentenceStat } from '../../../entities/script'
-import { extractWords, sentenceKeyOf } from '../../../entities/script'
-import { AsyncButton, Icon, IconButton, Modal, Progress, StudyTip } from '../../../shared/ui'
+import { sentenceKeyOf, sentenceTokens } from '../../../entities/script'
+import { AsyncButton, Icon, IconButton, Modal, StudyTip } from '../../../shared/ui'
 
 type FlashcardPageProps = {
+  exitLabel: string
   items: QuizItem[]
   stats: Record<string, SentenceStat>
   queue: number[]
@@ -15,7 +17,7 @@ type FlashcardPageProps = {
   wordPickerOpen: boolean
   pendingIndex: number | null
   selectedWords: Set<string>
-  onBack: () => void
+  onBack: () => Promise<unknown>
   onOpenSettings: () => void
   onMove: (direction: -1 | 1) => Promise<unknown>
   onTrackWordsChange: (value: boolean) => Promise<unknown>
@@ -38,7 +40,7 @@ export function FlashcardPage(props: FlashcardPageProps) {
   const sourceIndex = queue[index]
   const item = items[sourceIndex]
   const pickerItem = pendingIndex === null ? null : items[pendingIndex] ?? null
-  const pickerWords = pickerItem ? extractWords(pickerItem.english) : []
+  const pickerWords = pickerItem ? sentenceTokens(pickerItem.english) : []
   const cardRef = useRef<HTMLButtonElement>(null)
   const wordChipRefs = useRef<Array<HTMLButtonElement | null>>([])
 
@@ -75,21 +77,10 @@ export function FlashcardPage(props: FlashcardPageProps) {
   }
 
   return (
-    <section className="study-page">
-      <div className="study-header">
-        <div className="study-header-actions">
-          <IconButton className="mobile-relocated" icon="back" label="스크립트로 돌아가기" onClick={onBack} />
-          <IconButton className="mobile-relocated" icon="settings" label="학습 설정" onClick={onOpenSettings} />
-          <button onClick={() => void onMove(-1)} disabled={index <= 0 || wordPickerOpen || done}><Icon name="back" /><span className="sr-only">이전 카드</span></button>
-        </div>
-        <div><strong className="mobile-relocated">플래시카드</strong><span>{Math.min(index + 1, queue.length)} / {queue.length}</span></div>
-        <div className="study-header-actions right">
-          <button onClick={() => void onMove(1)} disabled={index >= queue.length - 1 || wordPickerOpen || done}><Icon name="arrow" /><span className="sr-only">다음 카드</span></button>
-          <label className="toggle-line"><input type="checkbox" checked={trackWords} onChange={(event) => void onTrackWordsChange(event.target.checked)} />단어 기록</label>
-        </div>
-      </div>
-
-      <Progress value={index} total={queue.length} />
+    <section className="study-page learning-page">
+      <StudyHeader title="플래시카드" index={index} total={queue.length} progress={index} done={done} previousDisabled={wordPickerOpen} nextDisabled={wordPickerOpen} exitLabel={props.exitLabel} onExit={onBack} onSettings={onOpenSettings} onMove={onMove}>
+        <label className="toggle-line"><input type="checkbox" checked={trackWords} onChange={(event) => void onTrackWordsChange(event.target.checked)} />단어 기록</label>
+      </StudyHeader>
       {!done && <StudyTip context="flashcard" />}
       {done ? (
         <section className="result-card">
@@ -117,7 +108,7 @@ export function FlashcardPage(props: FlashcardPageProps) {
         <Modal label="어려웠던 단어 선택">
           <section className="word-modal" onKeyDown={handleWordPickerKeyDown}>
             <h2>어려웠던 단어 선택</h2><p>{pickerItem?.english}</p>
-            <div className="word-chip-grid">{pickerWords.map((word, wordIndex) => <button ref={(node) => { wordChipRefs.current[wordIndex] = node }} key={word} className={selectedWords.has(word) ? 'selected' : ''} onClick={() => onToggleWord(word)}>{word}</button>)}</div>
+            <div className="word-chip-grid">{pickerWords.map((word, wordIndex) => <button ref={(node) => { wordChipRefs.current[wordIndex] = node }} key={wordIndex} className={selectedWords.has(String(wordIndex)) ? 'selected' : ''} onClick={() => onToggleWord(String(wordIndex))}>{word}</button>)}</div>
             <div className="button-row"><AsyncButton className="primary-btn" onAction={() => onCloseWordPicker(true)}><Icon name="check" />{selectedWords.size}개 기록</AsyncButton><AsyncButton onAction={() => onCloseWordPicker(false)}>넘기기</AsyncButton></div>
           </section>
         </Modal>

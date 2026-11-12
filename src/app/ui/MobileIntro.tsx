@@ -7,7 +7,7 @@ const MOBILE_QUERY = '(max-width: 820px)'
 function shouldShowIntro() {
   if (!window.matchMedia(MOBILE_QUERY).matches) return false
   try {
-    return sessionStorage.getItem(INTRO_SEEN_KEY) !== '1'
+    return localStorage.getItem(INTRO_SEEN_KEY) !== '1' && sessionStorage.getItem(INTRO_SEEN_KEY) !== '1'
   } catch {
     return true
   }
@@ -17,9 +17,12 @@ export function MobileIntro({ children }: { children: ReactNode }) {
   const [visible, setVisible] = useState(shouldShowIntro)
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      try { if (sessionStorage.getItem(INTRO_SEEN_KEY) === '1') localStorage.setItem(INTRO_SEEN_KEY, '1') } catch { /* Storage is optional. */ }
+      return
+    }
     try {
-      sessionStorage.setItem(INTRO_SEEN_KEY, '1')
+      localStorage.setItem(INTRO_SEEN_KEY, '1')
     } catch {
       // The intro still works when browser storage is unavailable.
     }

@@ -1,12 +1,12 @@
 import type { User } from '@supabase/supabase-js'
 import type { LearningStore } from '../../../entities/learning'
-import { BRAND_LINKS } from '../../../shared/config'
+import { APP_VERSION, BRAND_LINKS } from '../../../shared/config'
 import { displayLoginId } from '../../../shared/lib'
 import { AsyncButton, Icon } from '../../../shared/ui'
 import { ProjectCredit } from '../../../widgets/project-credit'
 import { InstallAppButton } from '../../../features/install-app'
 
-export function ProfilePage({ user, store, onSignOut }: { user: User; store: LearningStore; onSignOut: () => Promise<unknown> }) {
+export function ProfilePage({ user, store, onSignOut, onAbout }: { user: User; store: LearningStore; onSignOut: () => Promise<unknown>; onAbout: () => void }) {
   const loginId = displayLoginId(user)
   return (
     <section className="profile-page">
@@ -21,6 +21,8 @@ export function ProfilePage({ user, store, onSignOut }: { user: User; store: Lea
       <section className="body-panel profile-services"><h2>몰입 스터디</h2>{BRAND_LINKS.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><Icon name="arrow" /></a>)}</section>
       <AsyncButton className="profile-logout" onAction={onSignOut}><Icon name="logout" />로그아웃</AsyncButton>
       <ProjectCredit />
+      <button className="text-btn profile-about" onClick={onAbout}>서비스 소개 다시 보기<Icon name="arrow" /></button>
+      <p className="app-version">Molip Script · <span>v{APP_VERSION}</span></p>
     </section>
   )
 }

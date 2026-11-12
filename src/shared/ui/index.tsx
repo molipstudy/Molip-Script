@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 const paths = {
+  list: 'M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1',
+  grid: 'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
+  expand: 'm6 9 6 6 6-6',
+  collapse: 'm6 15 6-6 6 6',
+  heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z',
   install: 'M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5',
   star: 'm12 2.8 2.8 5.7 6.3.9-4.6 4.5 1.1 6.3-5.6-3-5.6 3 1.1-6.3-4.6-4.5 6.3-.9Z',
   profile: 'M20 21v-2a7 7 0 0 0-14 0v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
@@ -57,7 +62,7 @@ const tips = {
   flashcard: ['← 다시 연습 · → 기억했어요 · ↑ 이전 · ↓ 다음 단축키를 바로 사용할 수 있어요.', 'Space를 눌러 영어 문장을 확인하세요.', '단어 선택에서는 ← / →로 이동하고 Enter로 기록, Esc로 넘길 수 있어요.', '‘다시 연습’을 선택하면 어려운 문장과 단어를 다음 학습에 활용할 수 있어요.'],
   dictation: ['← 이전 단어 · → 다음 단어 · ↑ 이전 문장 · ↓ 다음 문장으로 이동해요. 입력한 답은 그대로 유지돼요.', 'Enter를 누르면 다음 빈칸으로 이동하고, 마지막 빈칸에서는 채점해요.', '채점한 빈칸을 누르면 정답과 오답을 직접 바꿀 수 있어요. 키보드에서는 Space를 누르세요.'],
   graded: ['채점한 빈칸을 누르면 정답 ↔ 오답을 바꿀 수 있어요. 변경한 결과는 학습 기록에도 반영돼요.', '← 이전 단어 · → 다음 단어 · ↑ 이전 문장 · ↓ 다음 문장으로 이동할 수 있어요.'],
-  community: ['마음에 드는 스크립트를 내 서재에 담으면 플래시카드와 받아쓰기로 학습할 수 있어요.'],
+  community: ['마음에 드는 스크립트를 내 스크립트에 담으면 플래시카드와 받아쓰기로 학습할 수 있어요.'],
 } as const
 const dismissedTips = new Set<string>()
 export function StudyTip({ context }: { context: keyof typeof tips }) {

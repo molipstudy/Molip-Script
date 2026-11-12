@@ -1,3 +1,4 @@
+import { AutoTextarea } from '../../../shared/ui/AutoTextarea'
 import { Fragment, useRef, useState } from 'react'
 import { exclusionKeysForTokens, parseEditorItems, remapExclusionKeys, serializeItems, validExclusionKeys } from '../../../entities/script'
 import type { QuizItem } from '../../../entities/script'
@@ -145,13 +146,13 @@ export function ScriptEditorPage({ editing, title, rawText, excludedWords, error
               updateCards(cards.filter((item) => item.id !== card.id).map((item, i) => ({ ...item, number: String(i + 1) })))
             }} /></div>
             <div className="sentence-fields">
-              <label className="field"><span>한글</span><textarea ref={(element) => { inputRefs.current[card.id] = element }} rows={1} value={card.meaning} placeholder="한글 뜻" onChange={(event) => updateCards(cards.map((item) => item.id === card.id ? { ...item, meaning: event.target.value.replace(/[\r\n]+/g, ' ') } : item))} /></label>
-              <label className="field"><span>영어</span><textarea rows={1} lang="en" value={card.english} placeholder="English sentence" onChange={(event) => updateCards(cards.map((item) => item.id === card.id ? { ...item, english: event.target.value.replace(/[\r\n]+/g, ' ') } : item))} /></label>
+              <label className="field"><span>한글</span><AutoTextarea ref={(element) => { inputRefs.current[card.id] = element }} rows={1} value={card.meaning} placeholder="한글 뜻" onChange={(event) => updateCards(cards.map((item) => item.id === card.id ? { ...item, meaning: event.target.value.replace(/[\r\n]+/g, ' ') } : item))} /></label>
+              <label className="field"><span>영어</span><AutoTextarea rows={1} lang="en" value={card.english} placeholder="English sentence" onChange={(event) => updateCards(cards.map((item) => item.id === card.id ? { ...item, english: event.target.value.replace(/[\r\n]+/g, ' ') } : item))} /></label>
             </div>
           </article>
           {insertButton(index + 1)}
         </Fragment>)}
-      </div> : <label className="field"><span>본문 · 번호. 한글 뜻 다음 줄에 영어 문장을 입력하세요</span><textarea value={rawText} onChange={(event) => {
+      </div> : <label className="field"><span>본문 · 번호. 한글 뜻 다음 줄에 영어 문장을 입력하세요</span><AutoTextarea value={rawText} onChange={(event) => {
         const nextRaw = event.target.value
         const before = parseEditorItems(rawText) ?? []
         const after = parseEditorItems(nextRaw) ?? []

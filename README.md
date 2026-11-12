@@ -5,136 +5,55 @@
 <h1 align="center">몰입 스크립트</h1>
 
 <p align="center">
-  나만의 영어 스크립트를 만들고 플래시카드와 받아쓰기로 반복 학습하는 웹 애플리케이션입니다.
+  영어 본문을 문장별로 나누어 플래시카드, 받아쓰기, 마스킹으로 암기하는 학습 서비스입니다.
 </p>
 
-<p align="center">
-  <a href="https://github.com/molipstudy/Molip-Script">GitHub</a> · Created by <a href="https://github.com/z1hxn">@z1hxn</a>
-</p>
+## 어떤 서비스인가요?
 
-## 주요 기능
+암기할 영어 본문을 스크립트로 만들고 세 가지 방법으로 반복 학습할 수 있습니다. 어려운 단어와 문장을 기록하고, 저장한 위치에서 다시 이어갈 수 있습니다.
 
-- 문장 카드 / 원문 편집 전환, 원하는 위치에 문장 추가, 원문 형식 복사
-- 스크립트별 받아쓰기 제외 단어 설정 (커뮤니티 공유·가져오기에도 유지)
-- 플래시카드와 받아쓰기 학습, 진행 상태 저장 및 이어하기
-- 여러 브라우저 탭에서 과거 진행 상태가 최신 기록을 덮어쓰는 상황 방지
-- 전체, 취약, 별표, 직접 지정 범위별 학습
-- 문장별 별표와 취약 문장·단어 기록
-- 받아쓰기 채점 결과 수정과 완료한 학습 내역 확인
-- 커뮤니티 스크립트 공유, 미리보기, 내 서재 복사
-- PC 사이드바와 모바일 하단 내비게이션을 제공하는 반응형 UI
-- iPhone 홈 화면 추가용 앱 아이콘 지원
+- **플래시카드**: 한글 뜻을 보고 영어를 떠올린 뒤, 기억 여부를 평가합니다.
+- **받아쓰기**: 영어 문장의 빈칸을 채우고 채점합니다. 결과를 수정하거나 틀린 문제만 다시 풀 수 있습니다.
+- **마스킹 학습**: 가려진 단어를 하나씩 공개하거나 다시 가리며 연습합니다. 맞음·틀림 평가와 취약 단어 기록을 지원합니다.
+- **학습 관리**: 학습 범위를 선택하고 취약 문장·단어와 별표를 모아 복습합니다.
+- **커뮤니티**: 공개 스크립트를 검색하고 내 스크립트에 담을 수 있습니다. 좋아요, 댓글, 게시자 팔로우도 지원합니다.
+- **비회원 체험**: 가입 없이 전용 스크립트로 세 가지 학습을 체험할 수 있습니다. 체험 기록은 저장되지 않습니다.
 
-## 기술 스택
+## 실제 서비스 화면
 
-- React 19
-- TypeScript 6
-- Vite 8
-- Supabase Auth, PostgreSQL, Row Level Security
-- Feature-Sliced Design
+아래 사진은 실제 서비스 사용 화면입니다. 사진 속 스크립트와 학습 수치는 촬영 당시의 예시입니다.
 
-## 시작하기
+### 학습 대시보드
 
-Node.js와 npm이 설치되어 있어야 합니다.
+홈에서 진행 중인 학습을 모드별로 이어가고, 복습이 필요한 문장을 확인할 수 있습니다. 홈은 최근 학습 최대 3개를 표시하며 더 보기에서 전체 목록을 확인합니다.
 
-```bash
-npm install
-cp .env.example .env.local
-npm run dev
-```
+[![몰입 스크립트 학습 대시보드](public/screenshots/home.png)](public/screenshots/home.png)
 
-`.env.local`에 Supabase 프로젝트 정보를 입력합니다.
+### 세 가지 학습 방법
 
-| 환경 변수 | 설명 |
-| --- | --- |
-| `VITE_SUPABASE_URL` | Supabase 프로젝트 URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon key |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | publishable key를 사용할 때 anon key 대신 설정 |
-| `VITE_SUPABASE_SCHEMA` | 앱 스키마 이름. 기본값은 `molip_script` |
-| `VITE_MOLIP_TIMER_URL` | 몰입 타이머 링크. 선택 사항 |
-| `VITE_MOLIP_VOCA_URL` | 몰입 단어장 링크. 선택 사항 |
+사진을 누르면 원본 크기로 볼 수 있습니다.
 
-Supabase SQL Editor에서 새 프로젝트는 [`supabase.sql`](supabase.sql)을 실행합니다. 기존 설치에서 학습 저장, 플래시카드 이어하기, 문장 별표만 추가하려면 [`learning-progress-upgrade.sql`](learning-progress-upgrade.sql)을 실행합니다. 이후 Supabase의 **Project Settings → Data API → Exposed schemas**에 `molip_script`를 추가하고 Email 로그인을 활성화합니다.
+| 플래시카드 | 받아쓰기 | 마스킹 학습 |
+| --- | --- | --- |
+| [![플래시카드 실제 화면](public/screenshots/flashcard.png)](public/screenshots/flashcard.png) | [![받아쓰기 실제 화면](public/screenshots/dictation.png)](public/screenshots/dictation.png) | [![마스킹 학습 실제 화면](public/screenshots/masking.png)](public/screenshots/masking.png) |
+| 뜻을 보고 문장을 회상한 뒤 기억 여부를 평가합니다. | 빈칸을 채우고 정답과 오답을 확인합니다. | 필요한 단어만 공개하며 문장을 연습합니다. |
 
-기존 설치에 새 에디터의 제외 단어 저장을 추가하려면 [`script-editor-upgrade.sql`](script-editor-upgrade.sql)을 Supabase SQL Editor에서 실행하세요. 기존 데이터와 권한은 유지됩니다.
+### 모바일 커뮤니티
 
-## 스크립트 형식
+휴대폰에서도 공개 스크립트를 검색하고 살펴볼 수 있습니다. PC에서는 목록형과 카드형 중 원하는 보기를 선택할 수 있습니다.
 
-본문·Wrap Up 같은 번호 없는 구분 줄은 문장 카드 전환과 제외 단어 선택에서 자동으로 건너뜁니다. 문장 카드에서 본문을 수정하면 번호가 붙은 문장 쌍으로 정리됩니다.
+<a href="public/screenshots/community-mobileview.png"><img src="public/screenshots/community-mobileview.png" width="320" alt="몰입 스크립트 모바일 커뮤니티 화면" /></a>
 
-문장 카드에서는 한글 뜻과 영어 문장을 각각 입력하고, 처음·중간·끝의 + 버튼으로 문장을 삽입합니다. 카드 왼쪽 손잡이를 마우스나 터치로 끌어 순서를 바꾸면 번호와 원문이 함께 갱신됩니다. 손잡이에 포커스를 둔 상태에서 ↑↓ 키로도 이동할 수 있습니다. 원문 편집에서는 아래 형식을 직접 입력합니다. 복사 버튼은 항상 원문 형식으로 복사하며, 제외 단어 설정은 별도 저장됩니다.
+## 시작하는 방법
 
-‘본문에서 제외 단어 선택’ 버튼을 누르면 전체 한글·영어 본문이 열립니다. 영어 단어를 눌러 제외·해제하고 적용하세요. `W:`, `B:` 같은 반복 표기는 직접 입력으로 문장부호까지 일치하는 현재 본문의 위치를 한 번에 선택할 수 있습니다. `Tim:`을 입력해도 대화 속 `Tim`은 제외되지 않습니다. 적용 후 스크립트를 저장하세요.
+1. 로그인 없이 체험용 스크립트로 학습 방법을 살펴봅니다.
+2. 내 자료를 학습하려면 가입하거나 로그인합니다.
+3. 내 스크립트에서 영어 본문을 추가하거나 커뮤니티의 공개 자료를 담습니다.
+4. 플래시카드·받아쓰기·마스킹 중 학습 방법과 범위를 선택합니다.
+5. 저장된 학습을 이어가거나 취약 문장을 다시 연습합니다.
 
-제외 설정은 각 문장의 단어 위치별로 저장됩니다. 같은 문장이나 다른 문장에서 같은 단어가 반복돼도 선택한 위치만 제외합니다. 카드 삽입·삭제·순서 변경 시에는 해당 카드의 설정을 유지하고, 영어 문장을 수정한 경우에는 그 문장의 제외 위치를 다시 선택해야 합니다. 직접 입력은 현재 본문을 대상으로 일괄 선택하며 이후 추가한 문장에는 자동 적용하지 않습니다.
-
-새 받아쓰기와 오답 재출제부터 적용되며 이미 저장된 퀴즈의 이어하기·결과는 유지됩니다. 출제 가능한 단어가 없는 문장은 건너뛰고, 모든 문장이 해당하면 안내합니다. 기존에 전체 단어로 저장한 설정은 위치를 복원할 수 없어 더 이상 적용하지 않으므로 에디터에서 다시 선택해 주세요.
-
-저장에는 기존 `excluded_words` 배열을 사용하므로 추가 SQL 마이그레이션은 없습니다. 배열의 각 항목은 `@token/v1/` 접두사와 `[문장 인덱스, 영어 본문, 단어 인덱스]` JSON을 담는 위치 키입니다. 공유·가져오기에도 함께 유지됩니다.
-
-한 문장은 번호, 한글 뜻, 영어 문장 순서로 입력합니다.
-
-```text
-1. 실례합니다. Star 경기장에 어떻게 가나요?
-Excuse me, how can I get to the Star Stadium?
-
-2. 지하철을 타고 갈 수 있어요.
-You can get there by subway.
-```
-
-## 학습 단축키
-
-### 플래시카드
-
-| 키 | 동작 |
-| --- | --- |
-| `Space` | 영어 문장 공개 |
-| `←` | 다시 연습 |
-| `→` | 기억했어요 |
-| `↑` | 이전 카드 |
-| `↓` | 다음 카드 |
-
-플래시카드 화면에 들어가면 카드에 자동으로 포커스되므로 별도의 클릭 없이 단축키를 사용할 수 있습니다. `←`와 `→` 평가는 영어 문장을 공개한 뒤 작동합니다.
-
-어려웠던 단어 선택창에서는 `←` / `→`로 단어를 이동하고, `Enter`로 선택한 단어를 기록하며, `Esc`로 기록 없이 넘길 수 있습니다.
-
-### 받아쓰기
-
-| 키 | 동작 |
-| --- | --- |
-| `←` / `→` | 이전 / 다음 문장 |
-| `Enter` | 다음 빈칸으로 이동하거나 마지막 빈칸 채점 |
-| `Space` | 포커스된 채점 결과의 정답 / 오답 전환 |
-
-## 프로젝트 구조
-
-```text
-src/
-├── app/        # 앱 진입점, 화면 조합, 전역 상태 제어
-├── pages/      # 라우트 단위 화면
-├── widgets/    # 내비게이션과 크레딧 등 조합 UI
-├── features/   # 학습 설정과 사용자 동작
-├── entities/   # 스크립트, 학습, 커뮤니티 도메인
-└── shared/     # Supabase, 공용 UI, 설정, 유틸리티
-```
-
-레이어별 책임과 import 규칙은 [`src/README.md`](src/README.md)에 정리되어 있습니다.
-
-## 명령어
-
-| 명령어 | 설명 |
-| --- | --- |
-| `npm run dev` | 개발 서버 실행 |
-| `npm run build` | 타입 검사 후 프로덕션 빌드 |
-| `npm run lint` | ESLint 검사 |
-| `npm run preview` | 프로덕션 빌드 미리보기 |
-
-## 데이터와 보안
-
-사용자 스크립트와 학습 기록은 Supabase에 저장됩니다. 모든 앱 테이블은 RLS 정책으로 로그인한 사용자 본인의 데이터만 수정할 수 있으며, 커뮤니티에는 사용자가 직접 공유한 스크립트 스냅샷만 공개됩니다.
+PC와 모바일을 지원하며, 홈 화면에 추가해 앱처럼 실행할 수 있습니다.
 
 ## 만든 사람
 
-[![GitHub](https://img.shields.io/badge/GitHub-%40z1hxn-181717?logo=github)](https://github.com/molipstudy/Molip-Script)
-
-Molip Script is created and maintained by [@z1hxn](https://github.com/z1hxn).
+Created by [@z1hxn](https://github.com/z1hxn) · [Molip Script](https://github.com/molipstudy/Molip-Script)

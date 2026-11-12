@@ -2,7 +2,6 @@ import type { ScriptRecord } from '../../../entities/script'
 import { parseItems } from '../../../entities/script'
 import { formatDateTime } from '../../../shared/lib'
 import { Icon, IconButton } from '../../../shared/ui'
-import { InstallAppBanner } from '../../../features/install-app'
 
 type HomePageProps = {
   scripts: ScriptRecord[]
@@ -16,13 +15,12 @@ export function HomePage({ scripts, query, onQueryChange, onAddScript, onOpenScr
   const filtered = scripts.filter((script) => script.title.toLowerCase().includes(query.toLowerCase()))
   return (
     <section className="home-surface">
-      <InstallAppBanner />
       <div className="page-top compact">
         <div><p className="eyebrow">Scripts</p><h1>내 스크립트</h1><p className="page-description">한 문장씩, 나의 영어가 되는 시간.</p></div>
         <button className="primary-btn" onClick={onAddScript}><Icon name="plus" />스크립트 추가</button>
       </div>
       <div className="library-toolbar">
-        <span className="library-count">내 서재 <strong>{scripts.length}</strong></span>
+        <span className="library-count">내 스크립트 <strong>{scripts.length}</strong></span>
         <label className="search-field"><Icon name="search" /><input aria-label="내 스크립트 검색" placeholder="스크립트 검색" value={query} onChange={(event) => onQueryChange(event.target.value)} />{query && <IconButton icon="close" label="검색 지우기" onClick={() => onQueryChange('')} />}</label>
       </div>
       {!!scripts.length && !filtered.length && <div className="empty-state"><Icon name="search" /><h2>검색 결과가 없어요</h2><p>다른 제목으로 검색해 보세요.</p></div>}

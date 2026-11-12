@@ -3,7 +3,7 @@ import type { StudyScope } from '../../../entities/learning'
 import { clamp } from '../../../shared/lib'
 import { AsyncButton, Icon, Modal } from '../../../shared/ui'
 
-type StudyKind = 'flashcard' | 'dictation'
+type StudyKind = 'flashcard' | 'dictation' | 'masking'
 
 type StudySettingsDialogProps = {
   script: ScriptRecord
@@ -59,6 +59,7 @@ export function StudySettingsDialog({
           <button aria-pressed={kind === 'dictation'} className={kind === 'dictation' ? 'active' : ''} onClick={() => onKindChange('dictation')}>
             <Icon name="pen" /><strong>받아쓰기</strong><small>빈칸을 채우며 정확하게</small>
           </button>
+          <button aria-pressed={kind === 'masking'} className={kind === 'masking' ? 'active' : ''} onClick={() => onKindChange('masking')}><Icon name="eye" /><strong>마스킹 학습</strong><small>단어를 하나씩 꺼내며 회상해요</small></button>
         </div>
 
         <div className="study-settings">
@@ -80,7 +81,7 @@ export function StudySettingsDialog({
               <small>총 {Math.abs(rangeEnd - rangeStart) + 1}문장</small>
             </div>
           )}
-          {kind === 'flashcard' ? (
+          {kind === 'masking' ? <p className="setting-note">단어를 눌러 공개하거나 가리고, 어려운 단어를 직접 기록할 수 있어요.</p> : kind === 'flashcard' ? (
             <label className="check-line"><input type="checkbox" checked={trackWords} onChange={(event) => onTrackWordsChange(event.target.checked)} />‘다시 연습’ 선택 후 어려운 단어 기록</label>
           ) : (
             <>
@@ -90,7 +91,7 @@ export function StudySettingsDialog({
           )}
           {error && <p className="error-text">{error}</p>}
         </div>
-        <AsyncButton className="primary-btn full-btn" onAction={onStart}>{kind === 'flashcard' ? '플래시카드 시작' : '받아쓰기 시작'}</AsyncButton>
+        <AsyncButton className="primary-btn full-btn" onAction={onStart}>{kind === 'masking' ? '마스킹 학습 시작' : kind === 'flashcard' ? '플래시카드 시작' : '받아쓰기 시작'}</AsyncButton>
       </section>
     </Modal>
   )

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { queueUnknown } from '../../entities/learning/lib/masking'
+import { trialScript, TRIAL_ID } from '../../entities/script/model/trial'
 import { supabase } from '../../shared/api'
-import type { Screen } from '../../shared/model/navigation'
+import type { RouteTarget, Screen } from '../../shared/model/navigation'
 import { parseAppPath, pathForScreen } from '../lib/routing'
 import type { CommunityScript, CommunityScriptRow } from '../../entities/community'
 import type {
@@ -52,7 +54,11 @@ import {
 } from '../../shared/lib'
 
 export function useAppController() {
-  const [screen, setScreen] = useState<Screen>('auth')
+  const [screen, setScreen] = useState<Screen>('home')
+  const [loginRequired, setLoginRequired] = useState(false)
+  const returnTarget = useRef<RouteTarget | null>(null)
+  const authUserId = useRef<string | null>(null)
+  const requestLogin = (target: Screen = 'library') => { returnTarget.current = { screen: target, scriptId: selectedScriptId, communityId: selectedCommunityId ?? undefined }; setLoginRequired(true) }
   const [user, setUser] = useState<User | null>(null)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [loginId, setLoginId] = useState('')
@@ -67,6 +73,7 @@ export function useAppController() {
   const [hasLoadedStore, setHasLoadedStore] = useState(false)
   const [syncError, setSyncError] = useState('')
   const [communityScripts, setCommunityScripts] = useState<CommunityScript[]>([])
+  const [publisherId, setPublisherId] = useState<string | null>(null)
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null)
   const [sharePickerOpen, setSharePickerOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -87,12 +94,14 @@ export function useAppController() {
 
   const [studyModalOpen, setStudyModalOpen] = useState(false)
   const [studyError, setStudyError] = useState('')
-  const [studyKind, setStudyKind] = useState<'flashcard' | 'dictation'>('flashcard')
+  const [studyKind, setStudyKind] = useState<'flashcard' | 'dictation' | 'masking'>('flashcard')
   const [studyScope, setStudyScope] = useState<StudyScope>('all')
   const [rangeStart, setRangeStart] = useState(1)
   const [rangeEnd, setRangeEnd] = useState(1)
   const [dictationBlankPercent, setDictationBlankPercent] = useState(30)
   const [trackFlashWords, setTrackFlashWords] = useState(true)
+  const [maskingGrades, setMaskingGrades] = useState<Record<string, boolean>>({})
+  const [visibleTokens, setVisibleTokens] = useState<number[]>([])
   const [flashQueue, setFlashQueue] = useState<number[]>([])
   const [flashIndex, setFlashIndex] = useState(0)
   const [flashRevealed, setFlashRevealed] = useState(false)
@@ -109,8 +118,9 @@ export function useAppController() {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const dictationNavigationRef = useRef<(direction: -1 | 1) => void>(() => undefined)
   const hasAppliedInitialRoute = useRef(false)
+  const skipRouteSync = useRef(false)
 
-  const selectedScript = store.scripts.find((script) => script.id === selectedScriptId) ?? null
+  const selectedScript = selectedScriptId === TRIAL_ID ? trialScript : store.scripts.find((script) => script.id === selectedScriptId) ?? null
   const selectedScriptSessions = selectedScript
     ? store.dictationSessions.filter((session) => session.scriptId === selectedScript.id)
     : []
@@ -130,7 +140,7 @@ export function useAppController() {
     ? store.activeQuizzes.filter((quiz) => quiz.scriptId === selectedScript.id)
     : []
   const selectedActiveDictation = selectedActiveLearnings.find((quiz) => quiz.quizType === 'dictation') ?? null
-  const selectedActiveFlashcard = selectedActiveLearnings.find((quiz) => quiz.quizType === 'flashcard') ?? null
+  const selectedActiveFlashcard = selectedActiveLearnings.find((quiz) => quiz.quizType === (screen === 'masking' || (screen !== 'flashcard' && studyKind === 'masking') ? 'masking' : 'flashcard')) ?? null
   const sortedScripts = useMemo(
     () => [...store.scripts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [store.scripts],
@@ -156,27 +166,9 @@ export function useAppController() {
         .order('updated_at', { ascending: false })
       if (scriptsResult.error) throw scriptsResult.error
 
-      let needsSchemaUpgrade = false
-      const sentenceResult = await supabase
-        .from('sentence_stats')
-        .select(
-          'script_id,sentence_key,number,meaning,english,flashcard_unknown_count,dictation_attempts,dictation_wrong_count,starred,last_studied_at,last_dictation_at',
-        )
-      let sentenceRows: SentenceStatRow[] = []
-      if (sentenceResult.error && /starred|column/i.test(sentenceResult.error.message)) {
-        needsSchemaUpgrade = true
-        const legacySentenceResult = await supabase
-          .from('sentence_stats')
-          .select('script_id,sentence_key,number,meaning,english,flashcard_unknown_count,dictation_attempts,dictation_wrong_count,last_studied_at,last_dictation_at')
-        if (legacySentenceResult.error) throw legacySentenceResult.error
-        sentenceRows = (legacySentenceResult.data ?? []).map((row) => ({
-          ...row,
-          starred: false,
-        })) as SentenceStatRow[]
-      } else {
-        if (sentenceResult.error) throw sentenceResult.error
-        sentenceRows = (sentenceResult.data ?? []) as SentenceStatRow[]
-      }
+      const sentenceResult = await supabase.from('sentence_stats').select('*')
+      if (sentenceResult.error) throw sentenceResult.error
+      const sentenceRows = (sentenceResult.data ?? []).map(row => ({ ...row, starred: row.starred ?? false })) as SentenceStatRow[]
 
       const wordResult = await supabase
         .from('word_stats')
@@ -194,7 +186,7 @@ export function useAppController() {
 
       const flashcardResult = await supabase
         .from('flashcard_sessions')
-        .select('id,script_id,created_at,total_cards,unknown_cards,tracked_words')
+        .select('*')
         .order('created_at', { ascending: false })
       if (flashcardResult.error) throw flashcardResult.error
 
@@ -204,7 +196,6 @@ export function useAppController() {
         .order('updated_at', { ascending: false })
       let activeQuizRows: ActiveQuizRow[] = []
       if (activeQuizResult.error && /progress|column/i.test(activeQuizResult.error.message)) {
-        needsSchemaUpgrade = true
         const legacyActiveResult = await supabase
           .from('active_quizzes')
           .select('id,script_id,quiz_type,mode,state,updated_at')
@@ -235,7 +226,7 @@ export function useAppController() {
           activeQuizRows,
         ),
       )
-      setSyncError(needsSchemaUpgrade ? '새 학습 저장 기능을 사용하려면 learning-progress-upgrade.sql을 Supabase SQL Editor에서 한 번 실행해 주세요.' : '')
+      setSyncError('')
     } catch (error) {
       const message = errorMessageOf(error)
       setSyncError(`데이터 불러오기 실패: ${toFriendlyDbError(message)}`)
@@ -246,7 +237,7 @@ export function useAppController() {
   }, [user])
 
   const loadCommunity = useCallback(async () => {
-    if (!supabase || !user) return
+    if (!supabase) return
     setCommunityLoading(true)
     try {
     const result = await supabase
@@ -270,23 +261,31 @@ export function useAppController() {
     } catch {
       setSyncError('커뮤니티를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
     } finally { setCommunityLoading(false) }
-  }, [user])
+  }, [])
 
   useEffect(() => {
-    if (screen === 'community' && user) void loadCommunity()
-  }, [screen, user, loadCommunity])
+    if (isAuthReady && (screen === 'community' || screen === 'publisher' || screen === 'about' || (screen === 'home' && !user))) void loadCommunity()
+  }, [screen, user, loadCommunity, isAuthReady])
 
   useEffect(() => {
     if (!supabase) return
     void supabase.auth.getSession().then(({ data }) => {
       const nextUser = data.session?.user ?? null
+      authUserId.current = nextUser?.id ?? null
       setUser(nextUser)
-      setScreen(nextUser ? 'home' : 'auth')
       setIsAuthReady(true)
     })
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user ?? null
+      if (authUserId.current === (nextUser?.id ?? null)) return
+      authUserId.current = nextUser?.id ?? null
+      if (_event === 'SIGNED_IN') returnTarget.current = { screen: 'home', scriptId: null }
+      if (_event === 'SIGNED_OUT') {
+        returnTarget.current = null
+        setLoginRequired(false)
+        window.history.replaceState(null, '', '/')
+      }
       setUser(nextUser)
       setStore(emptyStore())
       setHasLoadedStore(false)
@@ -294,7 +293,7 @@ export function useAppController() {
       setSelectedScriptId(null)
       setSelectedSessionId(null)
       setDetailedResultSessionId(null)
-      setScreen(nextUser ? 'home' : 'auth')
+      setScreen('home')
     })
 
     return () => data.subscription.unsubscribe()
@@ -311,36 +310,49 @@ export function useAppController() {
   }, [selectedScriptId, selectedItems.length])
 
   useEffect(() => {
-    if (!user || !hasLoadedStore || isLoadingStore || hasAppliedInitialRoute.current) return
-    const target = parseAppPath(window.location.pathname)
+    if (!isAuthReady || (user && !hasLoadedStore) || isLoadingStore || hasAppliedInitialRoute.current) return
+    const target = (user ? returnTarget.current : null) ?? parseAppPath(window.location.pathname)
+    if (user) returnTarget.current = null
     hasAppliedInitialRoute.current = true
-    if (target.screen === 'profile') { setScreen('profile'); return }
+    skipRouteSync.current = true
+    if (['profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+      if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
+      setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
+    }
+    if (target.screen === 'publisher') { setPublisherId(target.publisherId ?? null); setScreen('publisher'); return }
     if (target.screen === 'community') {
       setSelectedCommunityId(target.communityId ?? null)
       setScreen('community')
       return
     }
     if (!target.scriptId) return
-    if (!store.scripts.some((script) => script.id === target.scriptId)) return
+    if ((!user && target.scriptId !== TRIAL_ID) || (!user && ['history', 'result', 'editor'].includes(target.screen))) { returnTarget.current = target; setLoginRequired(true); return }
+    if (target.scriptId !== TRIAL_ID && !store.scripts.some((script) => script.id === target.scriptId)) return
+    if (target.screen === 'masking') setStudyKind('masking')
     setSelectedScriptId(target.scriptId)
     setSelectedSessionId(target.sessionId ?? null)
     setScreen(target.screen)
-  }, [hasLoadedStore, isLoadingStore, store.scripts, user])
+  }, [hasLoadedStore, isLoadingStore, store.scripts, user, isAuthReady])
 
   useEffect(() => {
-    if (!user || screen === 'auth' || screen === 'editor') return
     if (!hasAppliedInitialRoute.current) return
-    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId, selectedCommunityId)
+    if (skipRouteSync.current) { skipRouteSync.current = false; return }
+    if (screen === 'auth' || screen === 'editor') return
+    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId)
     if (window.location.pathname !== nextPath) {
       window.history.pushState(null, '', nextPath)
     }
-  }, [screen, selectedScriptId, selectedSessionId, selectedCommunityId, user])
+  }, [screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId, user])
 
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
-      if (target.screen === 'profile') { setScreen('profile'); return }
-      if (target.screen === 'community') {
+      if (['profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+      if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
+      setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
+    }
+      if (target.screen === 'publisher') { setPublisherId(target.publisherId ?? null); setScreen('publisher'); return }
+    if (target.screen === 'community') {
         setSelectedScriptId(null)
         setSelectedSessionId(null)
         setSelectedCommunityId(target.communityId ?? null)
@@ -353,13 +365,15 @@ export function useAppController() {
         setScreen('home')
         return
       }
+      if (!user && (target.scriptId !== TRIAL_ID || ['history', 'result'].includes(target.screen))) { returnTarget.current = target; setLoginRequired(true); return }
+      if (target.screen === 'masking') setStudyKind('masking')
       setSelectedScriptId(target.scriptId)
       setSelectedSessionId(target.sessionId ?? null)
       setScreen(target.screen)
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+  }, [user])
 
   useEffect(() => {
     if (!currentQuestion || currentGrade || isDictationDone) return
@@ -529,6 +543,7 @@ export function useAppController() {
   }
 
   const touchScript = (scriptId: string) => {
+    if (!user || scriptId === TRIAL_ID) return
     const touchedAt = nowIso()
     setStore((prev) => ({
       ...prev,
@@ -547,6 +562,10 @@ export function useAppController() {
   }
 
   const openScript = (scriptId: string) => {
+    setFlashQueue([])
+    setDictationQuestions([])
+    setVisibleTokens([])
+    setStudyKind('flashcard')
     setSelectedScriptId(scriptId)
     setSelectedSessionId(null)
     touchScript(scriptId)
@@ -603,6 +622,8 @@ export function useAppController() {
   }
 
   const openEditor = (script?: ScriptRecord) => {
+    if (!user) { requestLogin('editor'); return }
+    if (script?.id === TRIAL_ID) return
     setEditingScriptId(script?.id ?? null)
     setDraftTitle(script?.title ?? '')
     setDraftRawText(script?.rawText ?? '')
@@ -612,7 +633,7 @@ export function useAppController() {
   }
 
   const saveScript = async (excludedWords = draftExcludedWords) => {
-    if (!supabase) return
+    if (!supabase || !user || editingScriptId === TRIAL_ID) return
     const title = draftTitle.trim()
     const rawText = draftRawText.trim()
     if (!title) {
@@ -685,6 +706,7 @@ export function useAppController() {
   }
 
   const deleteScript = async (scriptId: string) => {
+    if (!user || scriptId === TRIAL_ID) return
     if (!supabase) return
     if (!window.confirm('스크립트와 학습 기록을 삭제할까요?')) return
     const { error } = await supabase.from('scripts').delete().eq('id', scriptId)
@@ -748,24 +770,17 @@ export function useAppController() {
   const copyCommunityScript = async (shared: CommunityScript) => {
     if (!supabase || !user) return
     setCommunityBusy(true)
-    const timestamp = nowIso()
-    const scriptId = makeId()
-    const { error } = await supabase.from('scripts').insert({
-      id: scriptId, owner_id: user.id, title: shared.title, raw_text: shared.rawText, excluded_words: shared.excludedWords,
-      created_at: timestamp, updated_at: timestamp, last_opened_at: timestamp,
-    })
-    if (error) setSyncError(`내 계정으로 복사 실패: ${toFriendlyDbError(error.message)}`)
-    else {
-      setStore((prev) => ({ ...prev, scripts: [{
-        id: scriptId, title: shared.title, rawText: shared.rawText, excludedWords: shared.excludedWords, createdAt: timestamp,
-        updatedAt: timestamp, lastOpenedAt: timestamp,
-      }, ...prev.scripts] }))
-      setSelectedScriptId(null)
-      setSelectedCommunityId(null)
-      setCommunityNotice('내 계정에 복사했습니다. 홈에서 학습할 수 있습니다.')
-      setScreen('home')
-    }
-    setCommunityBusy(false)
+    try {
+      const scriptId = makeId()
+      const { data, error } = await supabase.rpc('community_collect', { p_shared_id: shared.id, p_new_script_id: scriptId })
+      if (error) throw error
+      const row = (Array.isArray(data) ? data[0] : data) as ScriptRow | null
+      if (!row) throw new Error('copy failed')
+      setStore(previous => ({ ...previous, scripts: [{ id: row.id, title: row.title, rawText: row.raw_text, excludedWords: row.excluded_words ?? [], createdAt: row.created_at, updatedAt: row.updated_at, lastOpenedAt: row.last_opened_at }, ...previous.scripts] }))
+      setCommunityNotice('내 스크립트에 담았습니다. 내 스크립트에서 학습을 시작하세요.')
+      await loadCommunity()
+    } catch { setSyncError('스크립트를 담지 못했어요. 잠시 후 다시 시도해 주세요.') }
+    finally { setCommunityBusy(false) }
   }
 
   const upsertSentenceStat = async (
@@ -774,7 +789,7 @@ export function useAppController() {
     index: number,
     updater: (stat: SentenceStat) => SentenceStat,
   ) => {
-    if (!supabase || !user) return
+    if (scriptId !== TRIAL_ID && (!supabase || !user)) return
     const sentenceKey = sentenceKeyOf(item, index)
     const bucket = store.sentenceStatsByScript[scriptId] ?? {}
     const base: SentenceStat = bucket[sentenceKey] ?? {
@@ -800,6 +815,7 @@ export function useAppController() {
       },
     }))
 
+    if (scriptId === TRIAL_ID || !supabase || !user) return
     const { error } = await supabase.from('sentence_stats').upsert(
       {
         owner_id: user.id,
@@ -815,6 +831,7 @@ export function useAppController() {
         last_studied_at: next.lastStudiedAt ?? null,
         last_dictation_at: next.lastDictationAt ?? null,
         updated_at: nowIso(),
+        ...(next.maskingAttempts !== undefined ? { masking_attempts: next.maskingAttempts, masking_wrong_count: next.maskingWrongCount ?? 0 } : {}),
       },
       { onConflict: 'owner_id,script_id,sentence_key' },
     )
@@ -822,7 +839,9 @@ export function useAppController() {
   }
 
   const toggleSentenceStar = async (item: QuizItem, index: number) => {
-    if (!supabase || !selectedScript) return
+    if (!selectedScript) return
+    if (selectedScript.id === TRIAL_ID) { await upsertSentenceStat(TRIAL_ID, item, index, stat => ({ ...stat, starred: !stat.starred })); return }
+    if (!supabase || !user) return
     const sentenceKey = sentenceKeyOf(item, index)
     const { data, error } = await supabase.rpc('toggle_sentence_star', {
       p_script_id: selectedScript.id,
@@ -832,7 +851,7 @@ export function useAppController() {
       p_english: item.english,
     })
     if (error) {
-      setSyncError(`별표 저장 실패: ${toFriendlyDbError(error.message)} 최신 supabase.sql을 실행해 주세요.`)
+      setSyncError(`별표 저장 실패: ${toFriendlyDbError(error.message)}`)
       return
     }
     const starred = Boolean(data)
@@ -861,9 +880,9 @@ export function useAppController() {
   const recordWords = async (
     scriptId: string,
     words: string[],
-    source: 'dictation' | 'flashcard',
+    source: 'dictation' | 'flashcard' | 'masking',
   ) => {
-    if (!supabase || !user || !words.length) return
+    if (!supabase || !user || scriptId === TRIAL_ID || !words.length) return
     const normalizedWords = Array.from(new Set(words.map(normalizeWord).filter(Boolean)))
     const timestamp = nowIso()
     const current = store.wordStatsByScript[scriptId] ?? []
@@ -911,9 +930,10 @@ export function useAppController() {
   const adjustWordStat = async (
     scriptId: string,
     word: string,
-    source: 'dictation' | 'flashcard',
+    source: 'dictation' | 'flashcard' | 'masking',
     delta: 1 | -1,
   ) => {
+    if (scriptId === TRIAL_ID) return
     if (!supabase || !user) return
     const normalized = normalizeWord(word)
     if (!normalized) return
@@ -987,9 +1007,10 @@ export function useAppController() {
 
   const adjustWordStats = async (
     scriptId: string,
-    source: 'dictation' | 'flashcard',
+    source: 'dictation' | 'flashcard' | 'masking',
     deltasByWord: Record<string, number>,
   ) => {
+    if (scriptId === TRIAL_ID) return
     if (!supabase || !user) return
     const client = supabase
     const deltas = Object.entries(deltasByWord)
@@ -1085,7 +1106,7 @@ export function useAppController() {
 
     const weakKeys = new Set(
       Object.values(selectedStats)
-        .filter((stat) => stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0)
+        .filter((stat) => stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0 || (stat.maskingWrongCount ?? 0) > 0)
         .map((stat) => stat.sentenceKey),
     )
     const indexes = selectedItems
@@ -1099,13 +1120,14 @@ export function useAppController() {
     scope === 'all' ? 'standard' : scope
 
   const saveActiveLearning = async (
-    quizType: 'dictation' | 'flashcard',
+    quizType: 'dictation' | 'flashcard' | 'masking',
     scriptId: string,
     mode: StudyMode,
     state: ActiveDictationState | ActiveFlashcardState,
     progress: number,
     force = false,
   ): Promise<boolean> => {
+    if (scriptId === TRIAL_ID) return true
     if (!supabase || !user) return false
     const existing = store.activeQuizzes.find(
       (quiz) => quiz.scriptId === scriptId && quiz.quizType === quizType,
@@ -1121,7 +1143,7 @@ export function useAppController() {
       p_force: force,
     })
     if (error) {
-      setSyncError(`학습 진행 저장 실패: ${toFriendlyDbError(error.message)} 최신 supabase.sql을 실행해 주세요.`)
+      setSyncError(`학습 진행 저장 실패: ${toFriendlyDbError(error.message)}`)
       return false
     }
 
@@ -1163,7 +1185,8 @@ export function useAppController() {
     return true
   }
 
-  const deleteActiveLearning = async (scriptId: string, quizType: 'dictation' | 'flashcard') => {
+  const deleteActiveLearning = async (scriptId: string, quizType: 'dictation' | 'flashcard' | 'masking') => {
+    if (!user || scriptId === TRIAL_ID) return
     if (!supabase) return
     setStore((prev) => ({
       ...prev,
@@ -1189,17 +1212,20 @@ export function useAppController() {
     revealed,
     unknownIndexes,
     trackWords: trackFlashWords,
+    visibleTokens,
+    maskingGrades,
   })
 
   const saveActiveFlashcard = async (
     state: ActiveFlashcardState,
     reset = false,
+    kind: 'flashcard' | 'masking' = screen === 'masking' ? 'masking' : screen === 'flashcard' ? 'flashcard' : studyKind === 'masking' ? 'masking' : 'flashcard',
   ) => {
     if (!selectedScript) return false
     const progress = reset
       ? 1
       : Math.max(selectedActiveFlashcard?.progress ?? 0, state.currentIndex + 1)
-    return saveActiveLearning('flashcard', selectedScript.id, modeForScope(studyScope), state, progress)
+    return saveActiveLearning(kind, selectedScript.id, modeForScope(studyScope), state, progress)
   }
 
   const startFlashcard = async () => {
@@ -1214,22 +1240,27 @@ export function useAppController() {
       currentIndex: 0,
       revealed: false,
       unknownIndexes: [],
+      maskingGrades: {},
+      visibleTokens: [],
       trackWords: trackFlashWords,
     }
-    if (!(await saveActiveFlashcard(state, true))) return
+    if (!(await saveActiveFlashcard(state, true, studyKind === 'masking' ? 'masking' : 'flashcard'))) return
     setFlashQueue(queue)
+    setVisibleTokens([])
+    setMaskingGrades({})
     setFlashIndex(0)
     setFlashRevealed(false)
     setFlashUnknown([])
     setStudyModalOpen(false)
     touchScript(selectedScript.id)
-    setScreen('flashcard')
+    setScreen(studyKind === 'masking' ? 'masking' : 'flashcard')
   }
 
   const finishFlashcard = async (unknownIndexes = flashUnknown) => {
-    if (!supabase || !user || !selectedScript) return
+    if (selectedScript?.id === TRIAL_ID) return true
+    if (!supabase || !user || !selectedScript) return false
     const trackedWords = selectedWordStats
-      .filter((stat) => stat.source === 'flashcard')
+      .filter((stat) => stat.source === (screen === 'masking' ? 'masking' : 'flashcard'))
       .sort((a, b) => b.wrongCount - a.wrongCount)
       .slice(0, 20)
       .map((stat) => stat.word)
@@ -1237,6 +1268,7 @@ export function useAppController() {
       id: makeId(),
       scriptId: selectedScript.id,
       createdAt: nowIso(),
+      quizType: (screen === 'masking' || (screen !== 'flashcard' && studyKind === 'masking')) ? 'masking' : 'flashcard',
       totalCards: flashQueue.length,
       unknownCards: unknownIndexes.length,
       trackedWords,
@@ -1249,13 +1281,15 @@ export function useAppController() {
       total_cards: session.totalCards,
       unknown_cards: session.unknownCards,
       tracked_words: session.trackedWords,
+      ...(screen === 'masking' ? { quiz_type: 'masking' } : {}),
     })
     if (error) {
-      setSyncError(`플래시카드 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
-      return
+      setSyncError(`학습 기록 저장 실패: ${toFriendlyDbError(error.message)}`)
+      return false
     }
     setStore((prev) => ({ ...prev, flashcardSessions: [session, ...prev.flashcardSessions] }))
-    await deleteActiveLearning(selectedScript.id, 'flashcard')
+    await deleteActiveLearning(selectedScript.id, screen === 'masking' ? 'masking' : 'flashcard')
+    return true
   }
 
   const advanceFlashcard = async (known: boolean) => {
@@ -1263,6 +1297,26 @@ export function useAppController() {
     const sourceIndex = flashQueue[flashIndex]
     const item = selectedItems[sourceIndex]
     if (!item) return
+
+    if (screen === 'masking') {
+      const previous = maskingGrades[sourceIndex]
+      const nextGrades = { ...maskingGrades, [sourceIndex]: known }
+      const nextUnknown = queueUnknown(nextGrades)
+      const nextIndex = flashIndex + 1
+      if (!(await saveActiveFlashcard({ ...flashcardState(Math.min(nextIndex, flashQueue.length - 1), false, nextUnknown), maskingGrades: nextGrades, visibleTokens: [] }))) return
+      await upsertSentenceStat(selectedScript.id, item, sourceIndex, stat => ({
+        ...stat,
+        maskingAttempts: (stat.maskingAttempts ?? 0) + (previous === undefined ? 1 : 0),
+        maskingWrongCount: Math.max(0, (stat.maskingWrongCount ?? 0) + (known ? 0 : 1) - (previous === false ? 1 : 0)),
+        lastStudiedAt: nowIso(),
+      }))
+      setMaskingGrades(nextGrades)
+      setFlashUnknown(nextUnknown)
+      setVisibleTokens([])
+      if (nextIndex >= flashQueue.length && !(await finishFlashcard(nextUnknown))) return
+      setFlashIndex(nextIndex)
+      return
+    }
 
     const nextUnknown = !known && !flashUnknown.includes(sourceIndex)
       ? [...flashUnknown, sourceIndex]
@@ -1285,12 +1339,13 @@ export function useAppController() {
     }
 
     if (flashIndex >= flashQueue.length - 1) {
-      await finishFlashcard(nextUnknown)
+      if (!(await finishFlashcard(nextUnknown))) return
       setFlashIndex(flashQueue.length)
       return
     }
     const nextIndex = flashIndex + 1
-    if (!(await saveActiveFlashcard(flashcardState(nextIndex, false, nextUnknown)))) return
+    if (!(await saveActiveFlashcard({ ...flashcardState(nextIndex, false, nextUnknown), visibleTokens: [] }))) return
+    setVisibleTokens([])
     setFlashIndex(nextIndex)
     setFlashRevealed(false)
   }
@@ -1299,7 +1354,8 @@ export function useAppController() {
     if (!flashQueue.length || wordPickerOpen) return
     const nextIndex = clamp(flashIndex + direction, 0, flashQueue.length - 1)
     if (nextIndex === flashIndex) return
-    if (!(await saveActiveFlashcard(flashcardState(nextIndex, false)))) return
+    if (!(await saveActiveFlashcard({ ...flashcardState(nextIndex, false), visibleTokens: [] }))) return
+    setVisibleTokens([])
     setFlashIndex(nextIndex)
     setFlashRevealed(false)
   }
@@ -1312,10 +1368,10 @@ export function useAppController() {
 
   const closeWordPicker = async (save: boolean) => {
     if (save && selectedScript && selectedWords.size) {
-      await recordWords(selectedScript.id, Array.from(selectedWords), 'flashcard')
+      await recordWords(selectedScript.id, Array.from(selectedWords).map((key) => selectedItems[pendingFlashIndex ?? flashQueue[flashIndex]]?.english.split(/\s+/)[Number(key)] ?? '').filter(Boolean), 'flashcard')
     }
     if (flashIndex >= flashQueue.length - 1) {
-      await finishFlashcard()
+      if (!(await finishFlashcard())) return
       setFlashIndex(flashQueue.length)
       setWordPickerOpen(false)
       setPendingFlashIndex(null)
@@ -1323,10 +1379,11 @@ export function useAppController() {
       return
     }
     const nextIndex = flashIndex + 1
-    if (!(await saveActiveFlashcard(flashcardState(nextIndex, false)))) return
+    if (!(await saveActiveFlashcard({ ...flashcardState(nextIndex, false), visibleTokens: [] }))) return
     setWordPickerOpen(false)
     setPendingFlashIndex(null)
     setSelectedWords(new Set())
+    setVisibleTokens([])
     setFlashIndex(nextIndex)
     setFlashRevealed(false)
   }
@@ -1375,9 +1432,12 @@ export function useAppController() {
     setFlashIndex(state.currentIndex)
     setFlashRevealed(state.revealed)
     setFlashUnknown(state.unknownIndexes ?? [])
+    setStudyKind(quiz.quizType === 'masking' ? 'masking' : 'flashcard')
+    setVisibleTokens(state.visibleTokens ?? [])
+    setMaskingGrades(state.maskingGrades ?? {})
     setTrackFlashWords(state.trackWords ?? true)
     touchScript(quiz.scriptId)
-    setScreen('flashcard')
+    setScreen(quiz.quizType === 'masking' ? 'masking' : 'flashcard')
   }
 
   const startDictation = async (mode: StudyMode, retrySourceIndexes?: number[]) => {
@@ -1437,7 +1497,7 @@ export function useAppController() {
       if (selectedActiveDictation) resumeDictation(selectedActiveDictation)
       else void startDictation('standard')
     }
-    if (screen === 'flashcard') {
+    if (screen === 'flashcard' || screen === 'masking') {
       if (selectedActiveFlashcard) resumeFlashcard(selectedActiveFlashcard)
       else void startFlashcard()
     }
@@ -1445,7 +1505,7 @@ export function useAppController() {
 
   useEffect(() => {
     if (!selectedScript || !selectedItems.length) return
-    if (screen === 'flashcard' && !flashQueue.length) initializeLearningFromRoute()
+    if ((screen === 'flashcard' || screen === 'masking') && !flashQueue.length) initializeLearningFromRoute()
     if (screen === 'dictation' && !dictationQuestions.length) initializeLearningFromRoute()
   }, [dictationQuestions.length, flashQueue.length, screen, selectedItems, selectedScript])
 
@@ -1492,7 +1552,7 @@ export function useAppController() {
   }
 
   const saveDictationSession = async () => {
-    if (!supabase || !user || !selectedScript) return null
+    if (!supabase || !user || !selectedScript || selectedScript.id === TRIAL_ID) return null
     const grades = Object.values(gradesByIndex)
     const wrongWords = Array.from(new Set(grades.flatMap((grade) => grade.wrongWords)))
     const session: DictationSessionRecord = {
@@ -1665,9 +1725,10 @@ export function useAppController() {
     })
   }
 
-  const navigateMain = async (nextScreen: 'home' | 'community' | 'profile') => {
+  const navigateMain = async (nextScreen: 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
+    if (!user && (nextScreen === 'library' || nextScreen === 'continue')) { requestLogin('library'); return }
     if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
-    if (screen === 'flashcard' && flashQueue.length && flashIndex < flashQueue.length) {
+    if ((screen === 'flashcard' || screen === 'masking') && flashQueue.length && flashIndex < flashQueue.length) {
       await saveActiveFlashcard(flashcardState())
     }
     if (nextScreen === 'community') { setSelectedCommunityId(null); setCommunityNotice('') }
@@ -1764,6 +1825,11 @@ export function useAppController() {
     hasSupabase: Boolean(supabase),
     screen,
     setScreen,
+    loginRequired, setLoginRequired, requestLogin,
+    visibleTokens,
+    maskingGrades,
+    recordMaskWords: async (words: string[]) => { if (selectedScript && words.length) await recordWords(selectedScript.id, words, 'masking') },
+    setMaskTokens: async (tokens: number[]) => { if (await saveActiveFlashcard({ ...flashcardState(), visibleTokens: tokens })) setVisibleTokens(tokens) },
     user,
     authMode,
     setAuthMode,
@@ -1782,6 +1848,7 @@ export function useAppController() {
     syncError,
     store,
     communityScripts,
+    publisherId, setPublisherId,
     selectedCommunityId,
     setSelectedCommunityId,
     sharePickerOpen,

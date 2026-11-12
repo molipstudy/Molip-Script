@@ -1,5 +1,4 @@
 import type { User } from '@supabase/supabase-js'
-import { supabaseSchema } from '../api/supabase'
 
 export const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
 export const nowIso = () => new Date().toISOString()
@@ -43,21 +42,14 @@ export const errorMessageOf = (error: unknown) => {
 
 export const toFriendlyDbError = (message: string) => {
   const lowered = message.toLowerCase()
-  if (lowered.includes('excluded_words')) return '제외 단어 저장을 위해 Supabase SQL Editor에서 script-editor-upgrade.sql을 실행해 주세요.'
-  if (lowered.includes('pgrst002') || lowered.includes('schema cache')) {
-    return 'Supabase Data API의 Exposed schemas에 삭제된 스키마가 남아 있습니다. `supabase.sql`을 실행한 뒤 Data API 설정에 현재 스키마가 포함되어 있는지 확인해 주세요.'
+  if (lowered.includes('invalid login credentials')) {
+    return '아이디 또는 비밀번호가 올바르지 않습니다.'
   }
-  if (lowered.includes('invalid schema')) {
-    return `Supabase API 설정에서 Exposed schemas에 \`${supabaseSchema}\`를 추가해 주세요.`
+  if (lowered.includes('email not confirmed')) {
+    return '이메일 인증을 완료한 뒤 다시 로그인해 주세요.'
   }
-  if (lowered.includes('does not exist') || lowered.includes('relation')) {
-    return '`supabase.sql`을 Supabase SQL Editor에서 실행해 주세요.'
-  }
-  if (lowered.includes('row-level security') || lowered.includes('permission denied')) {
-    return 'RLS 또는 권한 정책을 확인해 주세요. 최신 `supabase.sql` 실행이 필요합니다.'
-  }
-  if (lowered.includes('email logins are disabled') || lowered.includes('email provider')) {
-    return 'Supabase Auth의 Email provider가 꺼져 있습니다. 이메일/비밀번호 로그인을 켜 주세요.'
+  if (lowered.includes('rate limit') || lowered.includes('too many requests')) {
+    return '요청이 많습니다. 잠시 후 다시 시도해 주세요.'
   }
   if (lowered.includes('user already registered') || lowered.includes('user already exists')) {
     return '이미 가입된 이메일입니다. 기존 비밀번호가 맞으면 입력한 아이디로 계정을 연결합니다.'
@@ -65,5 +57,5 @@ export const toFriendlyDbError = (message: string) => {
   if (lowered.includes('profiles_login_id_format') || lowered.includes('duplicate key')) {
     return '이미 사용 중인 아이디이거나 아이디 형식이 올바르지 않습니다.'
   }
-  return message
+  return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'
 }

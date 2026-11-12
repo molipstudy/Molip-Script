@@ -38,7 +38,7 @@ export function AuthPage({
   }
 
   return (
-    <main className="center-page">
+    <section className="auth-page" aria-label="로그인 및 회원가입">
       <section className={`auth-card ${mode === 'signup' ? 'signup-mode' : 'login-mode'}`}>
         <div className="auth-head">
           <img src="/logo/logo.png" alt="몰입 스터디" className="auth-logo" />
@@ -86,6 +86,6 @@ export function AuthPage({
         </AsyncButton>
         <InstallAppButton />
       </section>
-    </main>
+    </section>
   )
 }

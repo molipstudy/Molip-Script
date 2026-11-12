@@ -38,8 +38,8 @@ export function HistoryPage({ script, dictationSessions, flashcardSessions, onBa
           <div className="quiz-history-list flashcard-history-list">
             {flashcardSessions.map((session) => (
               <article className="quiz-history-row" key={session.id}>
-                <span className="quiz-history-main"><strong>{formatDateTime(session.createdAt)}</strong><small>플래시카드 · {session.totalCards}문장 학습</small></span>
-                <span className="quiz-history-stats"><em>{session.totalCards - session.unknownCards}/{session.totalCards}</em><small>기억함 · 다시 연습 {session.unknownCards}</small></span>
+                <span className="quiz-history-main"><strong>{formatDateTime(session.createdAt)}</strong><small>{session.quizType === 'masking' ? '마스킹 학습' : '플래시카드'} · {session.totalCards}문장 학습</small></span>
+                <span className="quiz-history-stats"><em>{session.totalCards - session.unknownCards}/{session.totalCards}</em><small>{session.quizType === 'masking' ? '맞음' : '기억함'} · {session.quizType === 'masking' ? '틀림' : '다시 연습'} {session.unknownCards}</small></span>
                 <Icon name="cards" className="row-arrow" />
               </article>
             ))}

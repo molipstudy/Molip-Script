@@ -5,8 +5,8 @@ export function SupabaseSetupPage() {
     <main className="center-page">
       <section className="auth-card">
         <img src="/logo/logo.png" alt="몰입 스터디" className="auth-logo" />
-        <h1>Supabase 연결 필요</h1>
-        <p className="muted">`.env`에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 설정해 주세요.</p>
+        <h1>서비스에 연결할 수 없어요</h1>
+        <p className="muted">잠시 후 다시 접속해 주세요.</p>
       </section>
     </main>
   )

@@ -111,3 +111,6 @@ export const remapExclusionKeys = (before: (QuizItem & { id?: string })[], after
         ? [exclusionKeyOf(item, nextIndex, tokenIndex)] : [])
   })
 }
+
+// Display tokens preserve every occurrence, capitalization and punctuation.
+export const sentenceTokens = (english: string) => english.split(/\s+/).filter(Boolean)
