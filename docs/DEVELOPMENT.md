@@ -132,7 +132,7 @@ Molip Script is created and maintained by [@z1hxn](https://github.com/z1hxn).
 
 ## 버전 기록
 
-현재 배포 준비 버전은 **v1.0.0**입니다. 주요 기능·UI 변화별 과거 개발 이력과 현재 변경 사항은 [CHANGELOG.md](../CHANGELOG.md)에 정리합니다.
+현재 배포 버전은 **v1.0.0**입니다. 주요 기능·UI 변화별 과거 개발 이력과 현재 변경 사항은 [CHANGELOG.md](../CHANGELOG.md)에 정리합니다.
 
 ### v1.0.0 커뮤니티 확장
 
