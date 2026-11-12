@@ -4,13 +4,6 @@ import type { Screen } from '../../shared/model/navigation'
 
 type Step = [string, string, string]
 const guides: Partial<Record<Screen, Step[]>> = {
-  home: [
-    ['[data-guide="intro"]', '나만의 문장으로 배우는 영어', '플래시카드, 받아쓰기, 마스킹으로 한 문장을 여러 방식으로 익혀요.'],
-    ['.sidebar-nav button:nth-child(3), .bottom-nav button:nth-child(3)', '커뮤니티', '누구나 공개 스크립트를 둘러보고 원문을 미리 볼 수 있어요.'],
-    ['.sidebar-nav button:nth-child(2), .bottom-nav button:nth-child(2)', '내 스크립트', '로그인하면 나만의 스크립트를 만들고 학습을 이어갈 수 있어요.'],
-    ['.account-profile, .account-login, .bottom-nav button:last-child', '마이 메뉴', '로그인과 회원가입, 계정 관리는 이곳에서 시작해요.'],
-    ['[data-guide="start"]', '바로 체험해 보세요', '가입 없이 전용 스크립트로 세 가지 학습을 이용할 수 있어요. 체험 기록은 저장되지 않아요.'],
-  ],
   about: [
     ['[data-guide="intro"]', '나만의 문장으로 배우는 영어', '플래시카드, 받아쓰기, 마스킹으로 영어 본문을 효율적으로 암기하세요.'],
     ['[data-guide="start"]', '무료 체험', '전용 스크립트로 세 가지 학습을 체험할 수 있어요.'],

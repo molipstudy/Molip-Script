@@ -239,7 +239,7 @@ function App() {
       {screen === 'home' && <InstallAppBanner />}
       <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
-      {!(screen === 'home' && user) && <Guide key={screen} screen={screen} />}
+      {screen !== 'home' && <Guide key={screen} screen={screen} />}
       {loginRequired && <div className="login-overlay" role="dialog" aria-modal="true" aria-label="로그인 안내"><section className="result-card"><h2>로그인이 필요한 기능이에요</h2><p>내 스크립트와 개인 학습 기록을 계정에 안전하게 보관하세요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setLoginRequired(false); setScreen('auth') }}>로그인하기</button><button onClick={() => setLoginRequired(false)}>계속 둘러보기</button></div></section></div>}
     </AppShell>
   )

@@ -881,137 +881,110 @@
 
 위치: `src/features/guide/Guide.tsx`. 각 화면 첫 안내와 수동 도움말에 표시되는 제목·본문입니다.
 
-### 도움말 · home
-
-**나만의 문장으로 배우는 영어**<br>
-플래시카드, 받아쓰기, 마스킹으로 한 문장을 여러 방식으로 익혀요.
-
-위치: [src/features/guide/Guide.tsx:8](../src/features/guide/Guide.tsx#L8)
-
-**커뮤니티**<br>
-누구나 공개 스크립트를 둘러보고 원문을 미리 볼 수 있어요.
-
-위치: [src/features/guide/Guide.tsx:9](../src/features/guide/Guide.tsx#L9)
-
-**내 스크립트**<br>
-로그인하면 나만의 스크립트를 만들고 학습을 이어갈 수 있어요.
-
-위치: [src/features/guide/Guide.tsx:10](../src/features/guide/Guide.tsx#L10)
-
-**마이 메뉴**<br>
-로그인과 회원가입, 계정 관리는 이곳에서 시작해요.
-
-위치: [src/features/guide/Guide.tsx:11](../src/features/guide/Guide.tsx#L11)
-
-**바로 체험해 보세요**<br>
-가입 없이 전용 스크립트로 세 가지 학습을 이용할 수 있어요. 체험 기록은 저장되지 않아요.
-
-위치: [src/features/guide/Guide.tsx:12](../src/features/guide/Guide.tsx#L12)
-
 ### 도움말 · about
 
 **나만의 문장으로 배우는 영어**<br>
 플래시카드, 받아쓰기, 마스킹으로 영어 본문을 효율적으로 암기하세요.
 
-위치: [src/features/guide/Guide.tsx:15](../src/features/guide/Guide.tsx#L15)
+위치: [src/features/guide/Guide.tsx:8](../src/features/guide/Guide.tsx#L8)
 
 **무료 체험**<br>
 전용 스크립트로 세 가지 학습을 체험할 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:16](../src/features/guide/Guide.tsx#L16)
+위치: [src/features/guide/Guide.tsx:9](../src/features/guide/Guide.tsx#L9)
 
 ### 도움말 · editor
 
 **문장 추가**<br>
 문장 사이의 + 버튼으로 한글 뜻과 영어 문장을 추가해요.
 
-위치: [src/features/guide/Guide.tsx:19](../src/features/guide/Guide.tsx#L19)
+위치: [src/features/guide/Guide.tsx:12](../src/features/guide/Guide.tsx#L12)
 
 **카드와 원문 편집**<br>
 문장 카드와 원문 편집을 자유롭게 전환할 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:20](../src/features/guide/Guide.tsx#L20)
+위치: [src/features/guide/Guide.tsx:13](../src/features/guide/Guide.tsx#L13)
 
 **문장 순서 변경**<br>
 손잡이를 끌거나 위아래 방향키로 문장을 옮기세요.
 
-위치: [src/features/guide/Guide.tsx:21](../src/features/guide/Guide.tsx#L21)
+위치: [src/features/guide/Guide.tsx:14](../src/features/guide/Guide.tsx#L14)
 
 **제외 단어 설정**<br>
 받아쓰기의 빈칸에서 제외할 단어 위치를 선택해요.
 
-위치: [src/features/guide/Guide.tsx:22](../src/features/guide/Guide.tsx#L22)
+위치: [src/features/guide/Guide.tsx:15](../src/features/guide/Guide.tsx#L15)
 
 **저장**<br>
 편집을 마쳤다면 저장 버튼으로 내 스크립트에 보관하세요.
 
-위치: [src/features/guide/Guide.tsx:23](../src/features/guide/Guide.tsx#L23)
+위치: [src/features/guide/Guide.tsx:16](../src/features/guide/Guide.tsx#L16)
 
 ### 도움말 · flashcard
 
 **문장 공개**<br>
 카드를 누르거나 Space 키를 눌러 영어 문장을 확인해요.
 
-위치: [src/features/guide/Guide.tsx:26](../src/features/guide/Guide.tsx#L26)
+위치: [src/features/guide/Guide.tsx:19](../src/features/guide/Guide.tsx#L19)
 
 **기억 여부 평가**<br>
 다시 연습과 기억했어요로 평가하세요. 좌우 방향키도 사용할 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:27](../src/features/guide/Guide.tsx#L27)
+위치: [src/features/guide/Guide.tsx:20](../src/features/guide/Guide.tsx#L20)
 
 **취약 단어 기록**<br>
 단어 기록을 켜면 다시 연습을 선택한 뒤 어려운 단어를 골라 저장할 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:28](../src/features/guide/Guide.tsx#L28)
+위치: [src/features/guide/Guide.tsx:21](../src/features/guide/Guide.tsx#L21)
 
 **문장 별표**<br>
 다시 보고 싶은 문장에 별표를 남기고 별표 범위로 학습하세요.
 
-위치: [src/features/guide/Guide.tsx:29](../src/features/guide/Guide.tsx#L29)
+위치: [src/features/guide/Guide.tsx:22](../src/features/guide/Guide.tsx#L22)
 
 ### 도움말 · dictation
 
 **빈칸 입력**<br>
 가려진 단어를 입력하세요. Enter로 다음 빈칸으로 이동해요.
 
-위치: [src/features/guide/Guide.tsx:32](../src/features/guide/Guide.tsx#L32)
+위치: [src/features/guide/Guide.tsx:25](../src/features/guide/Guide.tsx#L25)
 
 **채점**<br>
 문장을 완성한 뒤 채점하기를 눌러 확인하세요.
 
-위치: [src/features/guide/Guide.tsx:33](../src/features/guide/Guide.tsx#L33)
+위치: [src/features/guide/Guide.tsx:26](../src/features/guide/Guide.tsx#L26)
 
 **결과 수정**<br>
 채점 후 오답 옆의 정답을 누르면 정답 처리로 수정할 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:34](../src/features/guide/Guide.tsx#L34)
+위치: [src/features/guide/Guide.tsx:27](../src/features/guide/Guide.tsx#L27)
 
 **오답 재학습**<br>
 모든 문장을 마치면 결과 화면에서 틀린 문제만 다시 풀 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:35](../src/features/guide/Guide.tsx#L35)
+위치: [src/features/guide/Guide.tsx:28](../src/features/guide/Guide.tsx#L28)
 
 ### 도움말 · masking
 
 **단어 공개와 가리기**<br>
 단어마다 눌러서 공개하고, 다시 눌러 가리세요.
 
-위치: [src/features/guide/Guide.tsx:38](../src/features/guide/Guide.tsx#L38)
+위치: [src/features/guide/Guide.tsx:31](../src/features/guide/Guide.tsx#L31)
 
 **전체 공개**<br>
 문장 전체를 공개하거나 한 번에 다시 가릴 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:39](../src/features/guide/Guide.tsx#L39)
+위치: [src/features/guide/Guide.tsx:32](../src/features/guide/Guide.tsx#L32)
 
 **맞음과 틀림 평가**<br>
 문장을 떠올린 뒤 맞았어요 또는 틀렸어요를 선택하세요. 회원은 평가와 진행 상황이 저장되고 틀린 문장을 복습할 수 있어요.
 
-위치: [src/features/guide/Guide.tsx:40](../src/features/guide/Guide.tsx#L40)
+위치: [src/features/guide/Guide.tsx:33](../src/features/guide/Guide.tsx#L33)
 
 **취약 단어 기록**<br>
 어려웠던 단어를 선택해 기존 취약 단어 기록에 함께 보관하세요. 체험에서는 저장되지 않아요.
 
-위치: [src/features/guide/Guide.tsx:41](../src/features/guide/Guide.tsx#L41)
+위치: [src/features/guide/Guide.tsx:34](../src/features/guide/Guide.tsx#L34)
 
 
 ## 부록 C · 학습 Tip 문구
