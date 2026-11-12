@@ -1,6 +1,6 @@
 import { Icon } from '../../../shared/ui'
 
-const PROJECT_URL = 'https://github.com/molipstudy/Molip-Script'
+const PROJECT_URL = 'https://github.com/z1hxn'
 
 export function ProjectCredit() {
   return (
