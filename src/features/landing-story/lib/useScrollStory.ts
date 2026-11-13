@@ -31,7 +31,7 @@ export function useScrollStory(root: RefObject<HTMLElement | null>) {
         const count = frames.length + (stage ? 1 : 0)
         const top = window.innerWidth <= 820 ? 64 : 0
         const bottom = window.innerWidth <= 820 ? 96 : 24
-        const contentHeight = (track.querySelector<HTMLElement>('.story-frames')?.offsetHeight ?? 0) + (stage?.offsetHeight ?? 0) + 24
+        const contentHeight = (track.querySelector<HTMLElement>('.story-frames')?.offsetHeight ?? 0) + (stage?.offsetHeight ?? 0) + (track.querySelector<HTMLElement>('.story-chapter-cue')?.offsetHeight ?? 0) + 96
         const flow = Boolean(stage && contentHeight > window.innerHeight - top - bottom)
         track.dataset.flow = String(flow)
         const current = clampUnit((top - box.top) / Math.max(1, box.height - sticky.offsetHeight))

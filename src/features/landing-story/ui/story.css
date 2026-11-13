@@ -209,3 +209,23 @@
  .progress-demo-modes > li { gap: 12px; padding: 12px 0; }
  .progress-demo-meter { gap: 8px; }
 }
+
+/* Keep the next scroll visible at every storytelling pause, without covering the demo. */
+.story-scroll-cue { font-size: 15px; font-weight: 500; min-height: 44px; display: inline-flex; align-items: center; padding: 8px 12px; }
+.story-chapter-cue { display: flex; justify-content: center; align-items: center; gap: 12px; justify-self: center; width: fit-content; min-height: 44px; margin: 20px auto 0; padding: 8px 12px; color: var(--muted); font-size: 15px; font-weight: 500; line-height: 1.5; text-align: center; text-decoration: none; }
+.story-chapter-cue > span:last-child { color: var(--primary); font-size: 22px; line-height: 1; }
+.story-chapter-cue:hover, .story-scroll-cue:hover { color: var(--primary); }
+.story-chapter-cue:focus-visible, .story-scroll-cue:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 6px; }
+@media (max-width: 820px) {
+ .story-chapter-cue { font-size: 14px; margin-top: 12px; }
+ .story-scroll-cue { font-size: 14px; }
+}
+
+/* Anchor the cue near the viewport edge, separately from the centered copy. */
+.story-landing[data-scroll-ready="true"] .story-track:not([data-flow="true"]) .story-sticky { padding-bottom: 76px; }
+.story-landing[data-scroll-ready="true"] .story-track:not([data-flow="true"]) .story-chapter-cue { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); margin: 0; width: max-content; max-width: 100%; }
+.story-landing[data-scroll-ready="true"] .story-track[data-flow="true"] .story-chapter-cue { margin-top: 64px; }
+@media (max-width: 820px) {
+ .story-landing { --story-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+ .story-landing[data-scroll-ready="true"] .story-track:not([data-flow="true"]) .story-chapter-cue { bottom: 0; }
+}

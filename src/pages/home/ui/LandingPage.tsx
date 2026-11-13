@@ -29,16 +29,16 @@ export function LandingPage({ signedIn, scripts, loading, onStart, onCommunity, 
       <a className="story-scroll-cue" href="#story-problem">스크롤해서 알아보기 ↓</a>
     </header>
 
-    <StoryChapter id="story-problem" accents={['📖', '🤔', '✍️']} lines={storyContent.problem} />
-    <StoryChapter id="story-solution" lines={storyContent.solution} />
-    <StoryChapter id="story-flashcard" lines={storyContent.flashcard} description="한국어 해석을 보고 영어 원문을 떠올리는 학습"><FlashcardDemo /></StoryChapter>
-    <StoryChapter id="story-dictation" lines={storyContent.dictation} description="빈칸에 단어를 입력하고 바로 채점하는 학습"><DictationDemo /></StoryChapter>
-    <StoryChapter id="story-masking" lines={storyContent.masking} description="가려진 단어를 확인하며 반복하는 학습"><MaskingDemo /></StoryChapter>
-    <StoryChapter id="story-progress" lines={storyContent.progress} description="학습 진도 확인 · 이어하기 · 취약 문장 복습">
+    <StoryChapter id="story-problem" nextHref="#story-solution" accents={['📖', '🤔', '✍️']} lines={storyContent.problem} />
+    <StoryChapter id="story-solution" nextHref="#story-flashcard" lines={storyContent.solution} />
+    <StoryChapter id="story-flashcard" nextHref="#story-dictation" lines={storyContent.flashcard} description="한국어 해석을 보고 영어 원문을 떠올리는 학습"><FlashcardDemo /></StoryChapter>
+    <StoryChapter id="story-dictation" nextHref="#story-masking" lines={storyContent.dictation} description="빈칸에 단어를 입력하고 바로 채점하는 학습"><DictationDemo /></StoryChapter>
+    <StoryChapter id="story-masking" nextHref="#story-progress" lines={storyContent.masking} description="가려진 단어를 확인하며 반복하는 학습"><MaskingDemo /></StoryChapter>
+    <StoryChapter id="story-progress" nextHref="#story-community" lines={storyContent.progress} description="학습 진도 확인 · 이어하기 · 취약 문장 복습">
       <ProgressDemo />
     </StoryChapter>
 
-    <section className="story-community" aria-labelledby="story-community-title">
+    <section id="story-community" className="story-community" aria-labelledby="story-community-title">
       <h2 id="story-community-title">다른 사람이 만든 본문도 사용할 수 있어요.</h2>
       {loading ? <p className="story-community-empty" role="status">공개 스크립트를 불러오는 중이에요.</p> : scripts.length ? <ul>{scripts.slice(0, 3).map(script => <li key={script.id}><button onClick={() => onSelect(script.id)}><span><strong>{script.title}</strong><small>{script.ownerLoginId} · 문장 {parseItems(script.rawText).length}개</small></span><span aria-hidden="true">→</span></button></li>)}</ul> : <p className="story-community-empty">지금은 보여드릴 공개 스크립트가 없어요. 직접 등록한 본문으로도 학습할 수 있어요.</p>}
       <button className="text-btn story-community-link" onClick={onCommunity}>커뮤니티 둘러보기 →</button>
