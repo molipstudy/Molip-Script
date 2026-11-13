@@ -29,14 +29,17 @@ export function notificationFor(eventName, event) {
         { name: '이번 푸시', value: `${commits.length}개 커밋${commits.length > 8 ? ' · 최근 8개 표시' : ''}`, inline: true },
       ] })
   }
-  if (eventName === 'status') {
-    if (event.context !== 'Vercel' || !['success', 'failure', 'error'].includes(event.state)) return null
-    const success = event.state === 'success'
-    return payload({ title: success ? '배포에 성공했어요' : '배포에 실패했어요', color: success ? 0x18966c : 0xd9534f,
-      url: safeLink(event.target_url) ?? `${repo}/commit/${encodeURIComponent(event.sha ?? '')}`,
-      description: escape(cut(event.description, 1000)), fields: [
-        { name: '커밋', value: cut(event.sha, 7) || '확인 필요', inline: true },
-        { name: '배포 확인', value: 'Vercel 커밋 상태', inline: true },
+  if (eventName === 'workflow_run') {
+    const run = event.workflow_run
+    if (event.action !== 'completed' || run?.name !== 'Deploy production' || run.head_branch !== 'main' || run.actor?.login !== 'z1hxn' ||
+      run.head_repository?.full_name !== event.repository.full_name ||
+      !['success', 'failure', 'timed_out', 'action_required'].includes(run.conclusion)) return null
+    const success = run.conclusion === 'success'
+    return payload({ title: success ? '배포에 성공했어요' : '배포 작업이 실패했어요', color: success ? 0x18966c : 0xd9534f,
+      url: safeLink(run.html_url) ?? repo,
+      description: success ? '검사와 배포를 완료하고 운영 페이지 반영을 확인했어요.' : '검사·배포·확인 단계 중 문제가 발생했어요. 실행 내역에서 원인을 확인해 주세요.', fields: [
+        { name: '커밋', value: cut(run.head_sha, 7) || '확인 필요', inline: true },
+        { name: '대상', value: '운영 · main', inline: true },
       ] })
   }
   if (eventName === 'workflow_dispatch') return payload({ title: '알림 연결 확인', color: 0x7059ee, description: 'Molip Script의 디스코드 알림이 연결됐어요.', url: repo })
@@ -69,7 +72,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'))
     const payload = notificationFor(process.env.GITHUB_EVENT_NAME, event)
     if (payload) {
-      const webhook = process.env.GITHUB_EVENT_NAME === 'status'
+      const webhook = process.env.GITHUB_EVENT_NAME === 'workflow_run'
         ? process.env.DISCORD_DEPLOY_WEBHOOK_URL
         : process.env.DISCORD_GITHUB_WEBHOOK_URL
       await sendDiscord(webhook, payload)

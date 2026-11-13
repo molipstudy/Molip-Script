@@ -15,15 +15,17 @@ test('only main pushes with new commits produce commit notifications', () => {
     assert.equal(notificationFor('push', { repository, ...event }), null)
   }
 })
-test('Vercel failures including integration rejection and later success are distinct alerts', () => {
-  const base = { repository, context: 'Vercel', sha: 'abcd1234', target_url: 'https://vercel.com/project/deployment' }
-  for (const state of ['failure', 'error']) assert.equal(notificationFor('status', { ...base, state }).embeds[0].title, '배포에 실패했어요')
-  assert.equal(notificationFor('status', { ...base, state: 'success' }).embeds[0].title, '배포에 성공했어요')
-  assert.equal(notificationFor('status', { ...base, state: 'pending' }), null)
-  assert.equal(notificationFor('status', { ...base, context: 'Other check', state: 'failure' }), null)
+test('only completed production workflow results produce deployment alerts', () => {
+  const event = { repository, action: 'completed', workflow_run: { name: 'Deploy production', head_branch: 'main', actor: { login: 'z1hxn' }, head_repository: repository, head_sha: 'abcd1234', html_url: 'https://github.com/molipstudy/Molip-Script/actions/runs/123' } }
+  for (const conclusion of ['failure', 'timed_out', 'action_required']) assert.equal(notificationFor('workflow_run', { ...event, workflow_run: { ...event.workflow_run, conclusion } }).embeds[0].title, '배포 작업이 실패했어요')
+  assert.equal(notificationFor('workflow_run', { ...event, workflow_run: { ...event.workflow_run, conclusion: 'success' } }).embeds[0].title, '배포에 성공했어요')
+  for (const change of [{ conclusion: 'cancelled' }, { conclusion: 'skipped' }, { head_branch: 'feature' }, { name: 'Other job' }, { head_repository: { full_name: 'external/fork' } }, { actor: { login: 'another-user' } }]) {
+    assert.equal(notificationFor('workflow_run', { ...event, workflow_run: { ...event.workflow_run, conclusion: 'success', ...change } }), null)
+  }
+  assert.equal(notificationFor('status', { repository, context: 'Vercel', state: 'failure' }), null)
 })
 test('unsafe event links and non-Discord webhook targets are rejected', async () => {
-  const payload = notificationFor('status', { repository, context: 'Vercel', state: 'failure', target_url: 'https://example.com', sha: 'abcd1234' })
+  const payload = notificationFor('workflow_run', { repository, action: 'completed', workflow_run: { name: 'Deploy production', head_branch: 'main', actor: { login: 'z1hxn' }, head_repository: repository, conclusion: 'failure', html_url: 'https://example.com', head_sha: 'abcd1234' } })
   assert.match(payload.embeds[0].url, /^https:\/\/github.com\//)
   let called = false
   await assert.rejects(sendDiscord('https://example.com/secret', payload, { fetcher: async () => { called = true } }))

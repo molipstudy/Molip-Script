@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 신규-가입자 | Supabase의 새 서비스 프로필 | Supabase Vault: `molip_script_signup_discord_webhook_url` |
 | github-알림 | main 푸시 | GitHub Actions Secret: `DISCORD_GITHUB_WEBHOOK_URL` |
-| 배포-알림 | GitHub에 기록된 Vercel 성공·실패 상태 | GitHub Actions Secret: `DISCORD_DEPLOY_WEBHOOK_URL` |
+| 배포-알림 | GitHub Actions의 실제 배포 작업 완료 결과 | GitHub Actions Secret: `DISCORD_DEPLOY_WEBHOOK_URL` |
 | 문의-접수 | 추후 문의 기능에서 연결 | Supabase Vault: `molip_script_inquiry_discord_webhook_url` |
 | 운영-메모 | 운영자가 직접 작성 | 없음 |
 
@@ -20,9 +20,9 @@
 2. `.github/workflows/discord-notifications.yml`과 `scripts/notifications/discord.mjs`를 main에 반영합니다.
 3. GitHub Actions → **Discord notifications** → **Run workflow** → main을 선택하면 github-알림 채널로 연결 확인 메시지를 보냅니다.
 4. 다음 main 푸시부터 커밋 알림이 전송됩니다. 한 푸시의 커밋을 한 메시지로 묶고 최근 8개를 보여줍니다.
-5. 배포 알림은 `Vercel` 커밋 상태가 `success`, `failure`, `error`가 될 때 보냅니다. 대기 상태와 다른 검사 결과는 보내지 않습니다. 알림 실패는 서비스 배포를 차단하지 않습니다.
+5. 배포 알림은 `Deploy production` 작업이 완료됐을 때 보냅니다. 운영 페이지 확인까지 통과하면 성공, 검사·빌드·업로드·확인 중 실패하면 실패 알림을 보냅니다. 취소·건너뛰기와 다른 작업 결과는 알리지 않습니다. 알림 실패는 서비스 배포를 차단하지 않습니다.
 
-**배포 알림의 범위:** 현재 서비스에서 실제 확인한 GitHub Vercel 커밋 상태를 사용합니다. 운영/미리보기 구분을 임의로 표시하지 않습니다. GitHub 상태를 갱신하지 않는 별도 CLI 배포는 이 방식으로 감지되지 않습니다. 플랜 제한으로 자동 배포가 실패한 후 수동 배포에 성공하면 실패와 성공 알림이 모두 올 수 있습니다. 워크플로 재실행도 메시지를 다시 보냅니다.
+**배포 알림의 범위:** 새 배포 흐름은 [운영 배포 문서](DEPLOYMENT.md)를 따릅니다. Vercel Git 연동의 요금제 거절 상태는 더 이상 배포 결과로 알리지 않습니다. 별도 MCP/CLI 수동 배포는 이 워크플로 알림에 포함되지 않습니다. GitHub Actions에서 배포를 다시 실행하면 해당 실행 결과가 다시 전송됩니다.
 
 ## 신규 가입 알림
 
@@ -74,7 +74,7 @@ drop trigger if exists molip_discord_profile_created on molip_script.profiles;
 
 ## 참고
 
-- [GitHub status 이벤트](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#status)
+- [GitHub workflow_run 이벤트](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
 - [Supabase pg_net](https://supabase.com/docs/guides/database/extensions/pg_net)
 - [Supabase Vault](https://supabase.com/docs/guides/database/vault)
 - [Discord 웹훅](https://docs.discord.com/developers/resources/webhook)
