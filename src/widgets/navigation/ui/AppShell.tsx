@@ -10,6 +10,7 @@ import { InstallAppButton } from '../../../features/install-app'
 type MainScreen = 'continue' | 'about' | 'auth' | 'home' | 'library' | 'community' | 'profile'
 
 type AppShellProps = {
+  storyPage?: boolean
   screen: Screen
   user: User | null
   syncError: string
@@ -23,6 +24,7 @@ type AppShellProps = {
 
 export function AppShell({
   screen,
+  storyPage = false,
   user,
   syncError,
   mobileHeader,
@@ -68,7 +70,7 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className={`workspace ${screen === 'flashcard' || screen === 'dictation' || screen === 'masking' ? 'focus-workspace' : ''}`}>
+      <main className={`workspace ${screen === 'flashcard' || screen === 'dictation' || screen === 'masking' ? 'focus-workspace' : ''} ${storyPage ? 'story-workspace' : ''}`}>
         <header className="mobile-header">
           {mobileHeader ?? <button className="brand-button" onClick={() => void onNavigate('home')}>
             <img src="/logo/logo.png" alt="몰입 스터디" /><span>몰입 스크립트</span>

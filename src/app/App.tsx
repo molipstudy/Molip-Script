@@ -198,6 +198,7 @@ function App() {
   const shell = (content: React.ReactNode) => (
     <AppShell
       screen={screen}
+      storyPage={screen === 'about' || (screen === 'home' && !user)}
       user={user}
       syncError={syncError}
       mobileHeader={mobileHeader}
@@ -236,7 +237,7 @@ function App() {
         />
       ) : undefined}
     >
-      {screen === 'home' && <InstallAppBanner />}
+      {screen === 'home' && user && <InstallAppBanner />}
       <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
       {screen !== 'home' && <Guide key={screen} screen={screen} />}
@@ -272,7 +273,7 @@ function App() {
 
   if (screen === 'home' && user) return shell(<DashboardPage onMore={() => void navigateMain('continue')} store={store} onOpen={openScript} onResume={learning => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)} onCreate={() => openEditor()} onLibrary={() => void navigateMain('library')} onCommunity={() => void navigateMain('community')} onReview={id => { openScript(id); setStudyScope('weak'); setStudyError(''); setStudyModalOpen(true) }} />)
 
-  if (screen === 'home' || screen === 'about') return shell(<LandingPage signedIn={Boolean(user)} scripts={communityScripts} onStart={() => openScript(TRIAL_ID)} onCommunity={() => void navigateMain('community')} onSelect={(id) => { setSelectedCommunityId(id); setScreen('community') }} onLogin={() => setScreen('auth')} onLibrary={() => void navigateMain('library')} />)
+  if (screen === 'home' || screen === 'about') return shell(<LandingPage signedIn={Boolean(user)} scripts={communityScripts} onStart={() => openScript(TRIAL_ID)} onCommunity={() => void navigateMain('community')} onSelect={(id) => { setSelectedCommunityId(id); setScreen('community') }} loading={communityLoading} onSignup={() => { setAuthMode('signup'); setAuthError(''); setAuthNotice(''); setScreen('auth') }} onLibrary={() => void navigateMain('library')} />)
 
   if (screen === 'library') {
     return shell(
