@@ -22,6 +22,7 @@ export type RouteTarget = {
   scriptId: string | null
   screen: Screen
   sessionId?: string
+  adminMemberId?: string
   publisherId?: string
   communityId?: string
 }

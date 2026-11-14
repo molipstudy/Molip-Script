@@ -5,7 +5,7 @@
 .admin-overview strong { font-size: 30px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .admin-traffic-note { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; margin: 16px 0 30px; }
 .admin-traffic-note a { display: inline-flex; gap: 5px; align-items: center; color: var(--primary); }
-.admin-members-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.admin-members-layout { display: block; }
 .admin-members, .admin-detail { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 24px; min-width: 0; }
 .admin-page h2 { margin: 0 0 20px; font-size: 19px; }
 .admin-page h3 { font-size: 16px; margin: 24px 0 16px; overflow-wrap: anywhere; }
@@ -42,3 +42,10 @@
   .admin-member { padding-inline: 4px; }
   .admin-detail-list > div { grid-template-columns: 90px minmax(0,1fr); }
 }
+.admin-service-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.admin-service-links a { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); text-decoration: none; font-size: 14px; }
+.admin-service-links a:hover { color: var(--primary); border-color: var(--primary); }
+.admin-member-page { max-width: 920px; }
+.admin-member-page > .admin-detail { margin-top: 24px; }
+.admin-edit-form { display: grid; gap: 20px; max-width: 560px; margin-bottom: 28px; }
+.admin-edit-form select { min-height: 44px; width: 100%; }

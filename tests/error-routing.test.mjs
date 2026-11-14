@@ -29,3 +29,10 @@ test('SPA rewrite preserves all API paths for real HTTP error responses',async()
   assert.equal(match.test('/api/anything'),false)
   assert.equal(match.test('/api'),false)
 })
+
+test('admin member details have a strict UUID route and round trip', () => {
+ const id = 'ffe7a16b-36eb-4c3a-94b5-60a59ce079c3'
+ assert.deepEqual(parseAppPath(`/admin/members/${id}`), {scriptId:null,screen:'admin',adminMemberId:id})
+ assert.equal(pathForScreen('admin', null, null, null, null, id), `/admin/members/${id}`)
+ for (const path of ['/admin/members', '/admin/members/no-id', `/admin/members/${id}/edit`]) assert.equal(parseAppPath(path).screen, 'not-found')
+})

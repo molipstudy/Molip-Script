@@ -73,6 +73,7 @@ export function useAppController() {
   const [hasLoadedStore, setHasLoadedStore] = useState(false)
   const [syncError, setSyncError] = useState('')
   const [communityScripts, setCommunityScripts] = useState<CommunityScript[]>([])
+  const [adminMemberId, setAdminMemberId] = useState<string | null>(null)
   const [publisherId, setPublisherId] = useState<string | null>(null)
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null)
   const [sharePickerOpen, setSharePickerOpen] = useState(false)
@@ -326,6 +327,7 @@ export function useAppController() {
     skipRouteSync.current = true
     if (['not-found', 'forbidden', 'admin', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
+      setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
     }
     if (target.screen === 'publisher') { setPublisherId(target.publisherId ?? null); setScreen('publisher'); return }
@@ -348,17 +350,18 @@ export function useAppController() {
     if (!hasAppliedInitialRoute.current) return
     if (skipRouteSync.current) { skipRouteSync.current = false; return }
     if (screen === 'auth' || screen === 'editor' || screen === 'not-found') return
-    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId)
+    const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId, adminMemberId)
     if (window.location.pathname !== nextPath) {
       window.history.pushState(null, '', nextPath)
     }
-  }, [screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId, user])
+  }, [screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId, adminMemberId, user])
 
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
       if (['not-found', 'forbidden', 'admin', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
+      setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
     }
       if (target.screen === 'publisher') { setPublisherId(target.publisherId ?? null); setScreen('publisher'); return }
@@ -1747,6 +1750,7 @@ export function useAppController() {
     if ((screen === 'flashcard' || screen === 'masking') && flashQueue.length && flashIndex < flashQueue.length) {
       await saveActiveFlashcard(flashcardState())
     }
+    if (nextScreen === 'admin') setAdminMemberId(null)
     if (nextScreen === 'community') { setSelectedCommunityId(null); setCommunityNotice('') }
     setScreen(nextScreen)
   }
@@ -1864,7 +1868,7 @@ export function useAppController() {
     syncError,
     store,
     communityScripts,
-    publisherId, setPublisherId,
+    publisherId, setPublisherId, adminMemberId, setAdminMemberId,
     selectedCommunityId,
     setSelectedCommunityId,
     sharePickerOpen,

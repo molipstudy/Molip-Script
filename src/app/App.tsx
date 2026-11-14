@@ -51,7 +51,7 @@ function App() {
     syncError,
     store,
     communityScripts,
-    publisherId, setPublisherId,
+    publisherId, setPublisherId, adminMemberId, setAdminMemberId,
     selectedCommunityId,
     setSelectedCommunityId,
     sharePickerOpen,
@@ -258,7 +258,7 @@ function App() {
     if (admin.pending) return shell(<section className="result-card"><p role="status">불러오는 중…</p></section>)
     if (admin.error) return errorPage(503, admin.refresh)
     if (!user || !admin.isAdmin) return errorPage(403)
-    return shell(<AdminPage key={user.id} />)
+    return shell(<AdminPage key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
   }
 
   if (screen === 'auth') {
