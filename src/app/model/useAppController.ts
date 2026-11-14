@@ -160,6 +160,15 @@ export function useAppController() {
     setIsLoadingStore(true)
     setHasLoadedStore(false)
     try {
+      const profileResult = await supabase.rpc('account_profile')
+      if (profileResult.error) throw profileResult.error
+      const canonicalLoginId = profileResult.data?.[0]?.login_id
+      if (typeof canonicalLoginId === 'string' && canonicalLoginId !== user.user_metadata?.login_id) {
+        // Local display identity only; administrator rights never use this metadata.
+        setUser(previous => previous?.id === user.id
+          ? { ...previous, user_metadata: { ...previous.user_metadata, login_id: canonicalLoginId } }
+          : previous)
+      }
       const scriptsResult = await supabase
         .from('scripts')
         .select('*')
@@ -315,7 +324,7 @@ export function useAppController() {
     if (user) returnTarget.current = null
     hasAppliedInitialRoute.current = true
     skipRouteSync.current = true
-    if (['profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+    if (['not-found', 'forbidden', 'admin', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
     }
@@ -326,8 +335,9 @@ export function useAppController() {
       return
     }
     if (!target.scriptId) return
-    if ((!user && target.scriptId !== TRIAL_ID) || (!user && ['history', 'result', 'editor'].includes(target.screen))) { returnTarget.current = target; setLoginRequired(true); return }
-    if (target.scriptId !== TRIAL_ID && !store.scripts.some((script) => script.id === target.scriptId)) return
+    if (!user && target.scriptId !== TRIAL_ID) { setScreen('not-found'); return }
+    if (!user && ['history', 'result', 'editor'].includes(target.screen)) { setScreen('forbidden'); return }
+    if (target.scriptId !== TRIAL_ID && !store.scripts.some((script) => script.id === target.scriptId)) { setScreen('not-found'); return }
     if (target.screen === 'masking') setStudyKind('masking')
     setSelectedScriptId(target.scriptId)
     setSelectedSessionId(target.sessionId ?? null)
@@ -337,7 +347,7 @@ export function useAppController() {
   useEffect(() => {
     if (!hasAppliedInitialRoute.current) return
     if (skipRouteSync.current) { skipRouteSync.current = false; return }
-    if (screen === 'auth' || screen === 'editor') return
+    if (screen === 'auth' || screen === 'editor' || screen === 'not-found') return
     const nextPath = pathForScreen(screen, selectedScriptId, selectedSessionId, selectedCommunityId, publisherId)
     if (window.location.pathname !== nextPath) {
       window.history.pushState(null, '', nextPath)
@@ -347,7 +357,7 @@ export function useAppController() {
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
-      if (['profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+      if (['not-found', 'forbidden', 'admin', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
     }
@@ -365,7 +375,9 @@ export function useAppController() {
         setScreen('home')
         return
       }
-      if (!user && (target.scriptId !== TRIAL_ID || ['history', 'result'].includes(target.screen))) { returnTarget.current = target; setLoginRequired(true); return }
+      if (!user && target.scriptId !== TRIAL_ID) { setScreen('not-found'); return }
+      if (!user && ['history', 'result'].includes(target.screen)) { setScreen('forbidden'); return }
+      if (target.scriptId !== TRIAL_ID && !store.scripts.some(script => script.id === target.scriptId)) { setScreen('not-found'); return }
       if (target.screen === 'masking') setStudyKind('masking')
       setSelectedScriptId(target.scriptId)
       setSelectedSessionId(target.sessionId ?? null)
@@ -373,7 +385,7 @@ export function useAppController() {
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [user])
+  }, [user, store.scripts])
 
   useEffect(() => {
     if (!currentQuestion || currentGrade || isDictationDone) return
@@ -422,7 +434,7 @@ export function useAppController() {
     return user.id
   }
 
-  const handleAuth = async () => {
+  const handleAuth = async (signupSource?: string) => {
     if (!supabase) return
     const client = supabase
     setAuthError('')
@@ -433,16 +445,9 @@ export function useAppController() {
       return
     }
 
-    const saveProfile = async (id: string, email: string) =>
-      client.from('profiles').upsert(
-        {
-          id,
-          login_id: normalizedLoginId,
-          email,
-          updated_at: nowIso(),
-        },
-        { onConflict: 'id' },
-      )
+    const saveProfile = async () => client.rpc('register_profile', {
+      p_login_id: normalizedLoginId,
+    })
 
     if (authMode === 'login') {
       const { data: email, error: lookupError } = await client.rpc('email_for_login_id', {
@@ -464,6 +469,11 @@ export function useAppController() {
         setAuthError(toFriendlyDbError(result.error.message))
         return
       }
+      const { error: profileError } = await saveProfile()
+      if (profileError) {
+        setAuthError(toFriendlyDbError(profileError.message))
+        return
+      }
       setPassword('')
       return
     }
@@ -481,7 +491,13 @@ export function useAppController() {
     const result = await client.auth.signUp({
       email,
       password,
-      options: { data: { login_id: normalizedLoginId } },
+      options: { data: {
+        login_id: normalizedLoginId,
+        signup_service: 'molip-script',
+        ...(['지인 홍보', '커뮤니티', 'Instagram'].includes(signupSource ?? '')
+          ? { signup_source: signupSource }
+          : {}),
+      } },
     })
     if (result.error) {
       const loweredMessage = result.error.message.toLowerCase()
@@ -494,7 +510,7 @@ export function useAppController() {
           setAuthError('이미 가입된 이메일입니다. 기존 비밀번호를 확인해 주세요.')
           return
         }
-        const { error: profileError } = await saveProfile(loginResult.data.user.id, email)
+        const { error: profileError } = await saveProfile()
         if (profileError) {
           setAuthError(toFriendlyDbError(profileError.message))
           return
@@ -515,7 +531,7 @@ export function useAppController() {
         setAuthError('이미 가입된 이메일입니다. 기존 비밀번호를 확인해 주세요.')
         return
       }
-      const { error: profileError } = await saveProfile(loginResult.data.user.id, email)
+      const { error: profileError } = await saveProfile()
       if (profileError) {
         setAuthError(toFriendlyDbError(profileError.message))
         return
@@ -528,7 +544,7 @@ export function useAppController() {
     if (!result.data.session) {
       setAuthNotice('가입 확인 이메일을 보냈습니다. 이메일 인증 후 아이디로 로그인해 주세요.')
     } else if (result.data.user) {
-      const { error: profileError } = await saveProfile(result.data.user.id, email)
+      const { error: profileError } = await saveProfile()
       if (profileError) {
         setAuthError(toFriendlyDbError(profileError.message))
         return
@@ -1725,8 +1741,8 @@ export function useAppController() {
     })
   }
 
-  const navigateMain = async (nextScreen: 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
-    if (!user && (nextScreen === 'library' || nextScreen === 'continue')) { requestLogin('library'); return }
+  const navigateMain = async (nextScreen: 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
+    if (!user && (nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin('library'); return }
     if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
     if ((screen === 'flashcard' || screen === 'masking') && flashQueue.length && flashIndex < flashQueue.length) {
       await saveActiveFlashcard(flashcardState())

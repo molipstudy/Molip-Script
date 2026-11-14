@@ -1,3 +1,5 @@
+import { ErrorPage } from '../pages/error/ui/ErrorPage'
+import { useAdminAccess } from '../features/admin-access/model/useAdminAccess'
 import { PublisherPage } from '../pages/publisher/ui/PublisherPage'
 import { ContinuePage } from '../pages/home/ui/ContinuePage'
 import { lazy, Suspense } from 'react'
@@ -14,6 +16,7 @@ import { StudySettingsDialog } from '../features/learning-settings'
 import { AppShell } from '../widgets/navigation'
 import { AsyncButton, Icon, IconButton, LoadingSkeleton } from '../shared/ui'
 
+const AdminPage = lazy(() => import('../pages/admin/ui/AdminPage').then(module => ({ default: module.AdminPage })))
 const CommunityPage = lazy(() => import('../pages/community').then((module) => ({ default: module.CommunityPage })))
 const DictationPage = lazy(() => import('../pages/dictation').then((module) => ({ default: module.DictationPage })))
 const FlashcardPage = lazy(() => import('../pages/flashcard').then((module) => ({ default: module.FlashcardPage })))
@@ -152,6 +155,8 @@ function App() {
     saveCurrentDictationProgress,
   } = useAppController()
 
+  const admin = useAdminAccess(user?.id ?? '')
+
   if (!hasSupabase) return <SupabaseSetupPage />
 
   if (!isAuthReady || isLoadingStore) {
@@ -198,6 +203,7 @@ function App() {
   const shell = (content: React.ReactNode) => (
     <AppShell
       screen={screen}
+      isAdmin={admin.isAdmin}
       storyPage={screen === 'about' || (screen === 'home' && !user)}
       user={user}
       syncError={syncError}
@@ -240,10 +246,20 @@ function App() {
       {screen === 'home' && user && <InstallAppBanner />}
       <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
-      {screen !== 'home' && <Guide key={screen} screen={screen} />}
+      {screen !== 'home' && screen !== 'about' && <Guide key={screen} screen={screen} />}
       {loginRequired && <div className="login-overlay" role="dialog" aria-modal="true" aria-label="로그인 안내"><section className="result-card"><h2>로그인이 필요한 기능이에요</h2><p>내 스크립트와 개인 학습 기록을 계정에 안전하게 보관하세요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setLoginRequired(false); setScreen('auth') }}>로그인하기</button><button onClick={() => setLoginRequired(false)}>계속 둘러보기</button></div></section></div>}
     </AppShell>
   )
+
+  const errorPage = (code: 403 | 404 | 503, retry?: () => void) => shell(<ErrorPage code={code} onHome={() => void navigateMain('home')} onLogin={code === 403 && !user ? () => { setAuthMode('login'); setScreen('auth') } : undefined} onRetry={retry} />)
+  if (screen === 'not-found') return errorPage(404)
+  if (screen === 'forbidden') return errorPage(403)
+  if (screen === 'admin') {
+    if (admin.pending) return shell(<section className="result-card"><p role="status">불러오는 중…</p></section>)
+    if (admin.error) return errorPage(503, admin.refresh)
+    if (!user || !admin.isAdmin) return errorPage(403)
+    return shell(<AdminPage key={user.id} />)
+  }
 
   if (screen === 'auth') {
     return shell(
@@ -268,7 +284,7 @@ function App() {
   }
 
   if (screen === 'profile') {
-    return shell(user ? <ProfilePage user={user} store={store} onSignOut={signOut} onAbout={() => void navigateMain('about')} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
+    return shell(user ? <ProfilePage user={user} store={store} onSignOut={signOut} onAbout={() => void navigateMain('about')} onAdmin={admin.isAdmin ? () => void navigateMain('admin') : undefined} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
   }
 
   if (screen === 'home' && user) return shell(<DashboardPage onMore={() => void navigateMain('continue')} store={store} onOpen={openScript} onResume={learning => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)} onCreate={() => openEditor()} onLibrary={() => void navigateMain('library')} onCommunity={() => void navigateMain('community')} onReview={id => { openScript(id); setStudyScope('weak'); setStudyError(''); setStudyModalOpen(true) }} />)
@@ -292,6 +308,7 @@ function App() {
   if (screen === 'publisher' && publisherId) return shell(<PublisherPage key={publisherId} publisherId={publisherId} userId={user?.id ?? ''} onBack={() => void navigateMain('community')} onSelect={id => { setSelectedCommunityId(id); setScreen('community') }} onLogin={() => requestLogin('publisher')} />)
 
   if (screen === 'community') {
+    if (selectedCommunityId && !selectedCommunityScript && !communityLoading && !syncError) return errorPage(404)
     return shell(
       <CommunityPage
         onPublisher={id => { setPublisherId(id); setScreen('publisher') }}
@@ -456,14 +473,7 @@ function App() {
     )
   }
 
-  return shell(
-    <section className="empty-state">
-      <h2>화면을 찾을 수 없습니다.</h2>
-      <button className="primary-btn" onClick={() => setScreen('home')}>
-        홈으로
-      </button>
-    </section>,
-  )
+  return errorPage(404)
 }
 
 export default App

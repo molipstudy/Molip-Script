@@ -1,4 +1,7 @@
 export type Screen =
+  | 'not-found'
+  | 'forbidden'
+  | 'admin'
   | 'home'
   | 'about'
   | 'library'

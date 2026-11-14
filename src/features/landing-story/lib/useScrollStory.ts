@@ -52,6 +52,28 @@ export function useScrollStory(root: RefObject<HTMLElement | null>) {
 
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
+    const followCue = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const link = event.target instanceof Element
+        ? event.target.closest<HTMLAnchorElement>('.story-chapter-cue, .story-scroll-cue')
+        : null
+      const href = link?.getAttribute('href')
+      const target = href?.startsWith('#') ? document.getElementById(href.slice(1)) : null
+      if (!target || !element.contains(target)) return
+      event.preventDefault()
+      // Only an explicit cue click replays this chapter; backscroll keeps revealed content.
+      revealed.delete(target)
+      const sticky = target.querySelector<HTMLElement>('.story-sticky')
+      const inset = window.innerWidth <= 820 ? 64 : 0
+      const revealDistance = sticky && target.dataset.flow !== 'true' && !motion.matches
+        ? Math.max(0, target.offsetHeight - sticky.offsetHeight)
+        : 0
+      const top = window.scrollY + target.getBoundingClientRect().top - inset + revealDistance
+      schedule()
+      // Native scrolling drives exactly the same reveal logic as wheel and touch scrolling.
+      window.scrollTo({ top, behavior: motion.matches ? 'instant' : 'smooth' })
+    }
+    element.addEventListener('click', followCue)
     const observer = new ResizeObserver(schedule)
     observer.observe(element)
     tracks.forEach(track => { const sticky = track.querySelector('.story-sticky'); if (sticky) observer.observe(sticky) })
@@ -62,6 +84,7 @@ export function useScrollStory(root: RefObject<HTMLElement | null>) {
     return () => {
       if (frame) cancelAnimationFrame(frame)
       observer.disconnect()
+      element.removeEventListener('click', followCue)
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       motion.removeEventListener('change', schedule)

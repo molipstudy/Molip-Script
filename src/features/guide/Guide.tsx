@@ -31,7 +31,7 @@ const guides: Partial<Record<Screen, Step[]>> = {
     ['[data-guide="mask"]', '단어 공개와 가리기', '단어마다 눌러서 공개하고, 다시 눌러 가리세요.'],
     ['[data-guide="mask-all"]', '전체 공개', '문장 전체를 공개하거나 한 번에 다시 가릴 수 있어요.'],
     ['.study-actions', '맞음과 틀림 평가', '문장을 떠올린 뒤 맞았어요 또는 틀렸어요를 선택하세요. 회원은 평가와 진행 상황이 저장되고 틀린 문장을 복습할 수 있어요.'],
-    ['[data-guide="mask-words"]', '취약 단어 기록', '어려웠던 단어를 선택해 기존 취약 단어 기록에 함께 보관하세요. 체험에서는 저장되지 않아요.'],
+    ['[data-guide="mask-words"]', '취약 단어 기록', '틀렸어요를 누르면 취약 단어 선택창이 열려요. 어려웠던 단어를 기록한 뒤 다음 문장으로 넘어가세요. 체험에서는 저장되지 않아요.'],
   ],
 }
 const keyOf = (screen: Screen) => `molip-guide-v1:${screen === 'about' ? 'home' : screen}`

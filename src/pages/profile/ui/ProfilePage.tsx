@@ -6,7 +6,7 @@ import { AsyncButton, Icon } from '../../../shared/ui'
 import { ProjectCredit } from '../../../widgets/project-credit'
 import { InstallAppButton } from '../../../features/install-app'
 
-export function ProfilePage({ user, store, onSignOut, onAbout }: { user: User; store: LearningStore; onSignOut: () => Promise<unknown>; onAbout: () => void }) {
+export function ProfilePage({ user, store, onSignOut, onAbout, onAdmin }: { user: User; store: LearningStore; onSignOut: () => Promise<unknown>; onAbout: () => void; onAdmin?: () => void }) {
   const loginId = displayLoginId(user)
   return (
     <section className="profile-page">
@@ -17,6 +17,7 @@ export function ProfilePage({ user, store, onSignOut, onAbout }: { user: User; s
         <article><Icon name="history" /><strong>{store.dictationSessions.length + store.flashcardSessions.length}</strong><span>완료한 학습</span></article>
         <article><Icon name="pen" /><strong>{store.activeQuizzes.length}</strong><span>진행 중인 학습</span></article>
       </section>
+      {onAdmin && <button className="profile-admin-link" onClick={onAdmin}><Icon name="settings" /><span>관리자 페이지</span><Icon name="chevron" /></button>}
       <InstallAppButton />
       <section className="body-panel profile-services"><h2>몰입 스터디</h2>{BRAND_LINKS.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><Icon name="arrow" /></a>)}</section>
       <AsyncButton className="profile-logout" onAction={onSignOut}><Icon name="logout" />로그아웃</AsyncButton>
