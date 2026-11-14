@@ -1,3 +1,5 @@
+> Production 배포 성공 알림은 GitHub Actions 대신 [Vercel Function 연결](./VERCEL_DEPLOY_NOTIFICATIONS.md)을 사용합니다. 아래의 과거 배포 워크플로 설명은 현행 경로가 아닙니다. GitHub 커밋·Supabase 가입 알림은 유지합니다.
+
 > 공용 프로필 최종 단일화 이후에는 `molip_script.profiles`가 없습니다. 아래 최초 설치·이전용 SQL을 재실행하지 말고 `docs/ACCOUNT_MIGRATION.md`의 최신 순서를 따르세요. 가입 알림은 `service_registrations`의 첫 스크립트 등록으로 연결되며 기존 중복 방지 키는 유지됩니다.
 
 # 디스코드 운영 알림 연결
