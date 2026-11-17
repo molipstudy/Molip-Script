@@ -21,18 +21,41 @@ export async function handleAnalytics(req, res, { env = process.env, fetcher = f
     }
     const until = now()
     const since = until - 7 * 24 * 60 * 60 * 1000
-    const url = new URL('https://api.vercel.com/v1/query/web-analytics/visits/count')
-    url.searchParams.set('projectId', env.MOLIP_VERCEL_PROJECT_ID)
-    if (env.MOLIP_VERCEL_TEAM_ID) url.searchParams.set('teamId', env.MOLIP_VERCEL_TEAM_ID)
-    url.searchParams.set('since', new Date(since).toISOString())
-    url.searchParams.set('until', new Date(until).toISOString())
-    const response = await fetcher(url, { headers: { Authorization: `Bearer ${env.MOLIP_VERCEL_ANALYTICS_TOKEN}` }, signal: AbortSignal.timeout(8000) })
+    const query = async (kind, from, by) => {
+      const url = new URL(`https://api.vercel.com/v1/query/web-analytics/visits/${kind}`)
+      url.searchParams.set('projectId', env.MOLIP_VERCEL_PROJECT_ID)
+      if (env.MOLIP_VERCEL_TEAM_ID) url.searchParams.set('teamId', env.MOLIP_VERCEL_TEAM_ID)
+      url.searchParams.set('since', new Date(from).toISOString())
+      url.searchParams.set('until', new Date(until).toISOString())
+      if (by) { url.searchParams.set('by', JSON.stringify([by])); url.searchParams.set('limit', by === 'day' ? '10' : '5') }
+      const result = await fetcher(url, { headers: { Authorization: `Bearer ${env.MOLIP_VERCEL_ANALYTICS_TOKEN}` }, signal: AbortSignal.timeout(8000) })
+      return result
+    }
+    const results = await Promise.allSettled([
+      query('count', since), query('count', until - 86400000),
+      query('aggregate', since, 'requestPath'), query('aggregate', since, 'day'),
+    ])
+    if (results[0].status === 'rejected') throw new Error('Analytics unavailable')
+    const response = results[0].value
     if (!response.ok) return res.status(502).json({ error: '방문 통계를 불러오지 못했습니다. Vercel 연결과 조회 권한을 확인해 주세요.' })
     const { data } = await response.json()
     if (!Number.isSafeInteger(data?.pageviews) || data.pageviews < 0 || !Number.isSafeInteger(data?.visitors) || data.visitors < 0) {
       return res.status(502).json({ error: '방문 통계 응답을 확인하지 못했습니다.' })
     }
+    const metrics = value => Number.isSafeInteger(value?.visitors) && value.visitors >= 0 && Number.isSafeInteger(value?.pageviews) && value.pageviews >= 0
+      ? { visitors: value.visitors, pageviews: value.pageviews } : null
+    const optional = await Promise.all(results.slice(1).map(async result => {
+      if (result.status !== 'fulfilled' || !result.value.ok) return null
+      try { return (await result.value.json()).data } catch { return null }
+    }))
+    const pages = Array.isArray(optional[1]) ? optional[1].filter(row => metrics(row) && typeof row.requestPath === 'string').map(row => ({
+      path: row.requestPath.split(/[?#]/)[0].slice(0, 300), ...metrics(row),
+    })).sort((a, b) => b.pageviews - a.pageviews).slice(0, 6) : null
+    const daily = Array.isArray(optional[2]) ? optional[2].filter(row => metrics(row) && typeof row.timestamp === 'string' && Number.isFinite(Date.parse(row.timestamp))).map(row => ({
+      timestamp: row.timestamp, ...metrics(row),
+    })).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : null
     return res.status(200).json({ connected: true, pageviews: data.pageviews, visitors: data.visitors,
+      recent: metrics(optional[0]), pages, daily,
       since: new Date(since).toISOString(), until: new Date(until).toISOString() })
   } catch {
     return res.status(503).json({ error: '관리자 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.' })

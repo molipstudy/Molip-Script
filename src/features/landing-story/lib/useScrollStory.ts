@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
-import { clampUnit, frameStyle, retainProgress } from '../model/story'
+import { clampUnit, frameStyle, nextRevealProgress, retainProgress } from '../model/story'
 
 export function useScrollStory(root: RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -10,6 +10,7 @@ export function useScrollStory(root: RefObject<HTMLElement | null>) {
     const tracks = Array.from(element.querySelectorAll<HTMLElement>('[data-story-track]'))
     let frame = 0
     const revealed = new WeakMap<HTMLElement, number>()
+    const queued = new WeakMap<HTMLElement, number>()
     const setDemo = (track: HTMLElement, active: boolean) => {
       const value = String(active)
       const stage = track.querySelector<HTMLElement>('.story-demo-stage')
@@ -58,15 +59,20 @@ export function useScrollStory(root: RefObject<HTMLElement | null>) {
         ? event.target.closest<HTMLAnchorElement>('.story-chapter-cue, .story-scroll-cue')
         : null
       const href = link?.getAttribute('href')
-      const target = href?.startsWith('#') ? document.getElementById(href.slice(1)) : null
+      let target = href?.startsWith('#') ? document.getElementById(href.slice(1)) : null
       if (!target || !element.contains(target)) return
       event.preventDefault()
-      // Only an explicit cue click replays this chapter; backscroll keeps revealed content.
-      revealed.delete(target)
+      const currentTrack = link?.closest<HTMLElement>('[data-story-track]')
+      let nextProgress = 0
+      if (currentTrack && currentTrack.dataset.flow !== 'true' && !motion.matches) {
+        const count = currentTrack.querySelectorAll('.story-frame, .story-demo-stage').length
+        const next = nextRevealProgress(Math.max(revealed.get(currentTrack) ?? 0, queued.get(currentTrack) ?? 0), count)
+        if (next !== null) { target = currentTrack; nextProgress = next; queued.set(currentTrack, next) }
+      }
       const sticky = target.querySelector<HTMLElement>('.story-sticky')
       const inset = window.innerWidth <= 820 ? 64 : 0
       const revealDistance = sticky && target.dataset.flow !== 'true' && !motion.matches
-        ? Math.max(0, target.offsetHeight - sticky.offsetHeight)
+        ? Math.max(0, target.offsetHeight - sticky.offsetHeight) * nextProgress
         : 0
       const top = window.scrollY + target.getBoundingClientRect().top - inset + revealDistance
       schedule()

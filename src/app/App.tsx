@@ -249,7 +249,7 @@ function App() {
       ) : undefined}
     >
       {screen === 'home' && user && <InstallAppBanner />}
-      {user && missingProfile.length > 0 && dismissedProfileUser !== user.id && !['auth', 'profile', 'flashcard', 'dictation', 'masking', 'result'].includes(screen) && <aside className="profile-completion-notice" aria-label="회원 정보 입력 안내"><div><strong>회원 정보를 완성해 주세요.</strong><p>{missingProfile.join('·')} 정보가 비어 있어요. 내 정보에서 입력해 주세요.</p></div><div className="button-row"><button onClick={() => void navigateMain('profile')}>정보 입력</button><button className="text-btn" onClick={() => setDismissedProfileUser(user.id)}>나중에</button></div></aside>}
+      {user && missingProfile.length > 0 && dismissedProfileUser !== user.id && !['auth', 'profile', 'flashcard', 'dictation', 'masking', 'result'].includes(screen) && <aside className="profile-completion-notice" aria-label="회원 정보 입력 안내"><div><strong>회원 정보 확인이 필요해요</strong><p>{missingProfile.join('·')} 정보를 추가해 주세요. 계정을 더 편리하게 이용할 수 있어요.</p></div><div className="button-row"><button className="primary-btn" onClick={() => void navigateMain('profile')}>회원 정보 입력하기</button><button className="text-btn" onClick={() => setDismissedProfileUser(user.id)}>나중에</button></div></aside>}
       <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
       {screen !== 'home' && screen !== 'about' && <Guide key={screen} screen={screen} />}

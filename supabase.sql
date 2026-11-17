@@ -6,13 +6,8 @@
 --
 -- Supabase Dashboard requirement:
 -- Project Settings > Data API > Exposed schemas must contain molip_script.
--- Remove old app schemas from Exposed schemas: molip_english_blank, molip-script.
 
 create schema if not exists molip_script;
-
--- Remove old app-owned schemas. Do not drop the public schema.
-drop schema if exists molip_english_blank cascade;
-drop schema if exists "molip-script" cascade;
 
 create table if not exists molip_script.profiles (
   id uuid primary key references auth.users(id) on delete cascade,

@@ -6,7 +6,9 @@ import './admin.css'
 
 import { date, number } from '../model/member'
 import type { MemberList } from '../model/member'
-type Traffic = { connected: boolean; message?: string; visitors?: number; pageviews?: number; since?: string; until?: string }
+type Counts = { visitors: number; pageviews: number }
+type Overview = { total_members: number; new_members_7d: number; new_members_24h: number }
+type Traffic = { recent?: Counts | null; pages?: (Counts & { path: string })[] | null; daily?: (Counts & { timestamp: string })[] | null; connected: boolean; message?: string; visitors?: number; pageviews?: number; since?: string; until?: string }
 
 export function AdminPage({ memberId, onSelectMember }: { memberId: string | null; onSelectMember: (id: string | null) => void }) {
   const [query, setQuery] = useState('')
@@ -19,6 +21,20 @@ export function AdminPage({ memberId, onSelectMember }: { memberId: string | nul
   const [error, setError] = useState('')
   const [traffic, setTraffic] = useState<Traffic | null>(null)
   const [trafficError, setTrafficError] = useState('')
+  const [overview, setOverview] = useState<Overview | null>(null)
+  const [overviewError, setOverviewError] = useState(false)
+
+  useEffect(() => {
+    if (memberId) return
+    let active = true
+    void (async () => {
+      try {
+        const result = await supabase!.rpc('admin_member_overview')
+        if (active) { setOverview(result.error ? null : result.data as Overview); setOverviewError(Boolean(result.error)) }
+      } catch { if (active) { setOverview(null); setOverviewError(true) } }
+    })()
+    return () => { active = false }
+  }, [revision, memberId])
 
   useEffect(() => {
     if (memberId) return
@@ -52,18 +68,24 @@ export function AdminPage({ memberId, onSelectMember }: { memberId: string | nul
     return () => controller.abort()
   }, [revision, memberId])
   const updateFilters = () => { setLoading(true); setList(null) }
-  const refresh = () => { updateFilters(); setError(''); setTraffic(null); setTrafficError(''); setRevision(value => value + 1) }
+  const refresh = () => { updateFilters(); setError(''); setTraffic(null); setTrafficError(''); setOverview(null); setOverviewError(false); setRevision(value => value + 1) }
   if (memberId) return <AdminMemberPage key={memberId} memberId={memberId} onBack={() => onSelectMember(null)} />
   return <section className="admin-page">
     <div className="page-top"><div><p className="eyebrow">Molip Study</p><h1>관리자</h1><p className="page-description">회원과 서비스 현황을 확인하세요.</p></div><button onClick={refresh}><Icon name="reset" />새로고침</button></div>
     <nav className="admin-service-links" aria-label="서비스 관리 바로가기">{[['Vercel', 'https://vercel.com/z1hxn/molip-script'], ['GitHub', 'https://github.com/molipstudy/Molip-Script'], ['Supabase', 'https://supabase.com/dashboard/project/fdmcqpomrywuobbrmnyl']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer">{label}<Icon name="arrow" /></a>)}</nav>
     <div className="admin-overview">
-      <article><span>조회 가능한 회원</span><strong>{list ? number(list.total_members) : '—'}</strong></article>
-      <article><span>몰입 스크립트 회원</span><strong>{list ? number(list.script_members) : '—'}</strong></article>
+      <article><span>전체 회원</span><strong>{overview ? number(overview.total_members) : list ? number(list.total_members) : '—'}</strong></article>
+      <article><span>최근 7일 신규 가입</span><strong>{overview ? number(overview.new_members_7d) : '—'}</strong><small>{overview ? `최근 24시간 ${number(overview.new_members_24h)}명` : overviewError ? '가입 통계를 불러오지 못했어요' : '확인 중…'}</small></article>
+      <article><span>최근 24시간 방문자</span><strong>{traffic?.recent ? number(traffic.recent.visitors) : '—'}</strong></article>
+      <article><span>최근 24시간 페이지 조회</span><strong>{traffic?.recent ? number(traffic.recent.pageviews) : '—'}</strong></article>
       <article><span>최근 7일 방문자</span><strong>{traffic?.connected ? number(traffic.visitors!) : '—'}</strong></article>
       <article><span>최근 7일 페이지 조회</span><strong>{traffic?.connected ? number(traffic.pageviews!) : '—'}</strong></article>
     </div>
     <div className="admin-traffic-note" role="status">{trafficError ? '방문 통계를 불러오지 못했습니다. 연결 상태를 확인해 주세요.' : traffic?.connected ? `운영 사이트 · ${date(traffic.since!)} ~ ${date(traffic.until!)}` : traffic?.message || '방문 통계 확인 중…'} <a href="https://vercel.com/z1hxn/molip-script/analytics" target="_blank" rel="noreferrer">Vercel에서 보기 <Icon name="arrow" /></a></div>
+    <div className="admin-analytics-panels">
+      <section aria-labelledby="popular-pages-title"><h2 id="popular-pages-title">최근 7일 인기 페이지</h2>{!traffic?.pages ? <p className="muted">{trafficError || traffic ? '페이지 통계를 불러오지 못했어요' : '확인 중…'}</p> : !traffic.pages.length ? <p className="muted">아직 집계된 방문이 없어요</p> : <div className="admin-table-scroll"><table><thead><tr><th>페이지</th><th>방문자</th><th>조회</th></tr></thead><tbody>{traffic.pages.map(row => <tr key={row.path}><th scope="row">{row.path === 'Others' ? '기타 페이지' : row.path}</th><td>{number(row.visitors)}</td><td>{number(row.pageviews)}</td></tr>)}</tbody></table></div>}</section>
+      <section aria-labelledby="daily-visits-title"><h2 id="daily-visits-title">일별 방문</h2><p className="admin-period-label">최근 7일 · UTC 기준</p>{!traffic?.daily ? <p className="muted">{trafficError || traffic ? '일별 통계를 불러오지 못했어요' : '확인 중…'}</p> : !traffic.daily.length ? <p className="muted">아직 집계된 방문이 없어요</p> : <div className="admin-table-scroll"><table><thead><tr><th>날짜</th><th>방문자</th><th>조회</th></tr></thead><tbody>{traffic.daily.map(row => <tr key={row.timestamp}><th scope="row">{new Date(row.timestamp).toLocaleDateString('ko-KR', { timeZone: 'UTC', month: 'numeric', day: 'numeric' })}</th><td>{number(row.visitors)}</td><td>{number(row.pageviews)}</td></tr>)}</tbody></table></div>}</section>
+    </div>
     <div className="admin-members-layout">
       <section className="admin-members" aria-labelledby="admin-members-title">
         <h2 id="admin-members-title">회원 목록 {list && <span className="count-badge">{number(list.total)}</span>}</h2>

@@ -5,7 +5,7 @@ import ts from 'typescript'
 
 const model = await readFile(new URL('../src/features/landing-story/model/story.ts', import.meta.url), 'utf8')
 const url = `data:text/javascript;base64,${Buffer.from(ts.transpileModule(model, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText).toString('base64')}`
-const { frameStyle, retainProgress, dictationPhase, maskingTokens, storyContent } = await import(url)
+const { nextRevealProgress, frameStyle, retainProgress, dictationPhase, maskingTokens, storyContent } = await import(url)
 
 test('only the first problem sentence appears at entry, then each sentence is added', () => {
   assert.deepEqual([0, 1, 2].map(index => frameStyle(0, index, 3).opacity), [1, 0, 0])
@@ -52,4 +52,15 @@ test('story begins with the supplied student problem and covers all three learni
   assert.equal(storyContent.flashcard[1], '플래시카드로 확인해 보세요.')
   assert.equal(storyContent.dictation[1], '직접 입력해 보세요.')
   assert.equal(storyContent.masking[1], '단어를 하나씩 가려 보세요.')
+})
+
+test('each cue click reveals one further sentence before advancing chapters', () => {
+ const second = nextRevealProgress(0,3)
+ assert.equal(second,0.45)
+ assert.equal(frameStyle(second,2,3).opacity,0)
+ const third = nextRevealProgress(second,3)
+ assert.equal(third,0.7)
+ assert.ok(frameStyle(third,2,3).opacity > 0.999)
+ assert.equal(nextRevealProgress(third,3),null)
+ assert.equal(nextRevealProgress(0,1),null)
 })

@@ -1,6 +1,5 @@
 import { useState, type KeyboardEvent } from 'react'
-import { AsyncButton } from '../../../shared/ui'
-import { InstallAppButton } from '../../../features/install-app'
+import { AsyncButton, IconButton } from '../../../shared/ui'
 
 type AuthMode = 'login' | 'signup'
 
@@ -32,6 +31,7 @@ export function AuthPage({
   onSubmit,
 }: AuthPageProps) {
   const [signupSource, setSignupSource] = useState('')
+  const [loginNoticeDismissed, setLoginNoticeDismissed] = useState(false)
   const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.currentTarget.closest('section')?.querySelector<HTMLButtonElement>('.full-btn')?.click()
@@ -48,9 +48,10 @@ export function AuthPage({
             <h1>{mode === 'login' ? '몰입 스크립트' : '계정 만들기'}</h1>
             <p className="muted">
               {mode === 'login'
-                ? '다시 오신 걸 환영해요.'
-                : '몰입 스크립트에 오신 걸 환영해요.'}
+                ? '다시 오신 걸 환영해요'
+                : '몰입 스크립트에 오신 걸 환영해요'}
             </p>
+          {mode === 'signup' && <p className="auth-account-caption">몰입 스터디 통합 계정으로 가입해요</p>}
           </div>
         </div>
 
@@ -59,7 +60,7 @@ export function AuthPage({
           <button className={mode === 'signup' ? 'active' : ''} onClick={() => onModeChange('signup')}>회원가입</button>
         </div>
 
-        {mode === 'login' && <p className="auth-login-change">로그인은 이제 이메일로 해요. 저장된 아이디 대신 가입한 이메일을 입력해 주세요.</p>}
+        {mode === 'login' && !loginNoticeDismissed && <div className="auth-login-change" role="status"><div><strong>이메일 로그인으로 변경됐어요</strong><p>기존 아이디 대신 가입한 이메일을 입력해 주세요</p></div><IconButton icon="close" label="로그인 안내 닫기" onClick={() => setLoginNoticeDismissed(true)} /></div>}
         {mode === 'signup' && <label className="field"><span>유저네임</span><input value={loginId} onChange={event => onLoginIdChange(event.target.value)} autoComplete="nickname" maxLength={32} /><small>한글, 영문, 숫자로 나를 표현해 보세요. 커뮤니티에 공개됩니다.</small></label>}
         <label className="field"><span>이메일</span><input name="email" value={email} onChange={event => onEmailChange(event.target.value)} onKeyDown={submitOnEnter} type="email" autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="name@example.com" /></label>
         <label className="field">
@@ -82,7 +83,6 @@ export function AuthPage({
         <AsyncButton className="primary-btn full-btn" onAction={() => onSubmit(mode === 'signup' ? signupSource : undefined)}>
           {mode === 'login' ? '로그인' : '회원가입'}
         </AsyncButton>
-        <InstallAppButton />
       </section>
     </section>
   )

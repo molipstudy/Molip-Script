@@ -2241,3 +2241,25 @@ input[type='checkbox'] { accent-color: var(--primary); width: 16px; height: 16px
 .profile-personal-list dd { margin: 0; overflow-wrap: anywhere; }
 .profile-edit-form { display: grid; gap: 20px; max-width: 560px; }
 .profile-edit-form small { color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+/* Account notices and compact community browsing. */
+.auth-login-change { display:flex; align-items:flex-start; gap:12px; padding:16px; border:1px solid #d6ceff; border-radius:12px; background:#f5f2ff; color:var(--text); }
+.auth-login-change > div { flex:1; }
+.auth-login-change strong { font-size:14px; color:var(--primary); }
+.auth-login-change p { margin:6px 0 0; font-size:13px; line-height:1.6; }
+.auth-login-change .icon-btn { flex-shrink:0; min-width:32px; min-height:32px; padding:6px; background:transparent; border:0; }
+.auth-account-caption { color:var(--primary); font-size:13px; margin:10px 0 0; }
+.profile-completion-notice { border:2px solid #a99aff; background:#f0ebff; padding:22px 24px; box-shadow:0 5px 20px #6c56ee0c; }
+.profile-completion-notice strong { font-size:18px; color:#4932b0; }
+.profile-completion-notice p { color:#615581; font-size:14px; line-height:1.6; }
+@media (max-width:820px) {
+ .community-results > .community-card { padding:14px 16px; gap:6px; min-height:0; border-radius:10px; }
+ .community-card .community-card-open { gap:4px; }
+ .community-card .community-card-icon { display:none; }
+ .community-card-open > strong { font-size:16px; line-height:1.45; }
+ .community-card-open > span:last-child, .community-card-author small, .community-counts { font-size:11px; }
+ .community-card-author { gap:8px; }
+ .community-card-author button { min-height:28px; padding-block:2px; font-size:12px; }
+ .community-counts { gap:10px; }
+ .profile-completion-notice { padding:18px; }
+}

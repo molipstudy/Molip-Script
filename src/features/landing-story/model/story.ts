@@ -33,3 +33,12 @@ export function maskingTokens(elapsed: number, count: number) {
 
 export const retainProgress = (previous: number, current: number) =>
   Math.max(clampUnit(previous), clampUnit(current))
+
+// Advance to exactly one additional completed frame per cue click.
+export function nextRevealProgress(progress: number, count: number): number | null {
+  for (let index = 1; index < count; index++) {
+    const next = Math.min(1, index * 0.25 + 0.2)
+    if (next > progress + 0.001) return next
+  }
+  return null
+}

@@ -22,10 +22,10 @@ export function ProfileEditor({ profile, onSaved, onCancel }: { profile: Account
     finally { locked.current = false; setBusy(false) }
   }
   return <form className="profile-edit-form" onSubmit={event => { event.preventDefault(); void save() }}>
-    <label className="field"><span>로그인 이메일</span><input value={profile.email || ''} readOnly type="email" /><small>이메일은 이 화면에서 변경할 수 없어요.</small></label>
-    <label className="field"><span>유저네임</span><input required maxLength={32} autoComplete="nickname" value={username} disabled={busy} onChange={event => setUsername(event.target.value)} /><small>커뮤니티에 공개됩니다. 한글도 사용할 수 있어요.</small></label>
-    <label className="field"><span>이름</span><input autoComplete="name" maxLength={80} value={fullName} disabled={busy} onChange={event => setFullName(event.target.value)} /><small>다른 회원에게 공개되지 않습니다.</small></label>
-    <label className="field"><span>전화번호</span><input type="tel" autoComplete="tel" placeholder="01012345678" value={phone} maxLength={24} disabled={busy} onChange={event => setPhone(event.target.value)} /><small>비공개 연락처이며, 입력만으로 본인 인증되지는 않습니다.</small></label>
+    <label className="field"><span>로그인 이메일</span><input value={profile.email || ''} readOnly type="email" /><small>이메일은 변경할 수 없어요.</small></label>
+    <label className="field"><span>유저네임</span><input required maxLength={32} autoComplete="nickname" value={username} disabled={busy} onChange={event => setUsername(event.target.value)} /><small>커뮤니티에서 사용할 이름이에요.</small></label>
+    <label className="field"><span>이름</span><input autoComplete="name" maxLength={80} value={fullName} disabled={busy} onChange={event => setFullName(event.target.value)} /><small>이름과 전화번호는 다른 회원에게 공개되지 않아요.</small></label>
+    <label className="field"><span>전화번호</span><input type="tel" autoComplete="tel" placeholder="01012345678" value={phone} maxLength={24} disabled={busy} onChange={event => setPhone(event.target.value)} /></label>
     {error && <p role="alert" className="error-text">{error}</p>}
     <div className="button-row"><button className="primary-btn" type="submit" disabled={busy} aria-busy={busy}>{busy ? '저장 중…' : '저장'}</button><button type="button" disabled={busy} onClick={onCancel}>취소</button></div>
   </form>
