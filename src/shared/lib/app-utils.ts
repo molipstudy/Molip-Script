@@ -8,9 +8,9 @@ export const sessionDetailStorageKey = (sessionId: string) => `molip-script:dict
 export const isValidLoginId = (value: string) => /^[a-z0-9][a-z0-9._-]{2,31}$/.test(value)
 
 export const displayLoginId = (user: User) => {
-  const metadataId = user.user_metadata?.login_id
+  const metadataId = user.user_metadata?.login_id ?? user.user_metadata?.username
   if (typeof metadataId === 'string' && metadataId) return metadataId
-  return user.email ?? '사용자'
+  return '사용자'
 }
 
 export const formatDateTime = (value: string) =>

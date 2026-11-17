@@ -2229,3 +2229,15 @@ input[type='checkbox'] { accent-color: var(--primary); width: 16px; height: 16px
 
 .profile-admin-link { width: 100%; display: flex; align-items: center; gap: 12px; padding: 18px 20px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
 .profile-admin-link span { flex: 1; text-align: left; }
+
+.auth-login-change { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
+.profile-completion-notice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 18px 20px; margin-bottom: 24px; background: #f1effc; border: 1px solid var(--line); border-radius: 10px; }
+.profile-completion-notice p { margin: 5px 0 0; font-size: 13px; color: var(--muted); }
+.profile-personal-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.profile-personal-head h2 { margin: 0; }
+.profile-personal-list { margin: 0; }
+.profile-personal-list > div { display: grid; grid-template-columns: 90px minmax(0,1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.profile-personal-list dt { color: var(--muted); }
+.profile-personal-list dd { margin: 0; overflow-wrap: anywhere; }
+.profile-edit-form { display: grid; gap: 20px; max-width: 560px; }
+.profile-edit-form small { color: var(--muted); font-size: 12px; line-height: 1.6; }

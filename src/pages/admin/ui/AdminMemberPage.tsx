@@ -45,11 +45,11 @@ export function AdminMemberPage({ memberId, onBack }: { memberId: string; onBack
     {error ? <p role="alert" className="error-text">{error}</p> : !detail ? <p role="status" className="admin-empty">회원 정보를 불러오는 중…</p> : <section className="admin-detail">
       <h2>{detail.login_id || '프로필 미등록'}</h2>
       {editing ? <form className="admin-edit-form" onSubmit={event => { event.preventDefault(); void save() }}>
-        <p className="page-description">공용 프로필 편집은 전체 서비스 관리자만 저장할 수 있어요.</p><label className="field"><span>표시 이름</span><input value={username} maxLength={80} required disabled={saving} onChange={event => setUsername(event.target.value)} /></label>
+        <p className="page-description">공용 프로필 편집은 전체 서비스 관리자만 저장할 수 있어요.</p><label className="field"><span>유저네임</span><input value={username} maxLength={32} required disabled={saving} onChange={event => setUsername(event.target.value)} /></label>
         <label className="field"><span>가입 경로</span><select value={source} disabled={saving} onChange={event => setSource(event.target.value)}><option value="">미선택</option>{['지인 홍보', '커뮤니티', 'Instagram'].map(value => <option key={value}>{value}</option>)}</select></label>
         <div className="button-row"><button type="submit" className="primary-btn" disabled={saving || !username.trim()} aria-busy={saving}>{saving ? '저장 중…' : '변경 사항 저장'}</button><button type="button" disabled={saving} onClick={() => { setEditing(false); setNotice('') }}>취소</button></div>
       </form> : <dl className="admin-detail-list">{[
-        ['표시 이름', detail.username || '미등록'], ['이메일', detail.email || '미등록'], ['로그인 아이디', detail.login_id || '미등록'], ['UUID', detail.id],
+        ['유저네임', detail.username || '미등록'], ['이메일', detail.email || '미등록'], ['이름', detail.contact_access === false ? '비공개' : detail.full_name || '미입력'], ['전화번호', detail.contact_access === false ? '비공개' : detail.phone_number || '미입력'], ['UUID', detail.id],
         ['가입 경로', detail.signup_source], ['계정 생성', date(detail.created_at)], ['스크립트 가입', date(detail.profile_created_at)],
         ['최근 로그인', date(detail.last_sign_in_at)], ['이메일 인증', date(detail.email_confirmed_at)],
       ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}

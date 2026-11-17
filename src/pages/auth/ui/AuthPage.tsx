@@ -59,19 +59,12 @@ export function AuthPage({
           <button className={mode === 'signup' ? 'active' : ''} onClick={() => onModeChange('signup')}>회원가입</button>
         </div>
 
-        <label className="field">
-          <span>아이디</span>
-          <input value={loginId} onChange={(event) => onLoginIdChange(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-        </label>
-        {mode === 'signup' && (
-          <label className="field">
-            <span>이메일</span>
-            <input value={email} onChange={(event) => onEmailChange(event.target.value)} onKeyDown={submitOnEnter} type="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="name@example.com" />
-          </label>
-        )}
+        {mode === 'login' && <p className="auth-login-change">로그인은 이제 이메일로 해요. 저장된 아이디 대신 가입한 이메일을 입력해 주세요.</p>}
+        {mode === 'signup' && <label className="field"><span>유저네임</span><input value={loginId} onChange={event => onLoginIdChange(event.target.value)} autoComplete="nickname" maxLength={32} /><small>한글, 영문, 숫자로 나를 표현해 보세요. 커뮤니티에 공개됩니다.</small></label>}
+        <label className="field"><span>이메일</span><input name="email" value={email} onChange={event => onEmailChange(event.target.value)} onKeyDown={submitOnEnter} type="email" autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="name@example.com" /></label>
         <label className="field">
           <span>비밀번호</span>
-          <input value={password} onChange={(event) => onPasswordChange(event.target.value)} onKeyDown={submitOnEnter} type="password" />
+          <input value={password} onChange={(event) => onPasswordChange(event.target.value)} onKeyDown={submitOnEnter} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} name="password" />
         </label>
         {mode === 'signup' && (
           <label className="field">

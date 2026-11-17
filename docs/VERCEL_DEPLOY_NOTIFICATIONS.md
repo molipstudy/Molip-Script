@@ -4,7 +4,11 @@
 
 Supabase와 GitHub Actions는 배포 알림에 사용하지 않습니다. 기존 Supabase 가입 알림과 GitHub 커밋 알림은 그대로 유지합니다.
 
-## 운영 적용 순서
+## 요금제 확인
+
+Vercel Account Webhooks는 Pro·Enterprise에서 제공됩니다. Hobby에서는 아래 팀 웹훅 설정을 진행할 수 없습니다. 유료 업그레이드 없이 연결하려면 GitHub의 `deployment_status` 웹훅을 받는 별도 어댑터가 필요합니다. GitHub Actions와는 별개입니다. 현재 수신 API는 Vercel 서명/페이로드용이므로 GitHub 웹훅을 그대로 연결하면 안 됩니다.
+
+## 운영 적용 순서 (Vercel Pro·Enterprise)
 
 1. 수신 Function 코드를 커밋·푸시해 Vercel에 배포합니다.
 2. Vercel 팀 설정 → Webhooks에서 새 웹훅을 등록합니다.

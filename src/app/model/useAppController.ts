@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { normalizeUsername, validUsername } from '../../features/account-profile/model/profile'
 import { queueUnknown } from '../../entities/learning/lib/masking'
 import { trialScript, TRIAL_ID } from '../../entities/script/model/trial'
 import { supabase } from '../../shared/api'
@@ -45,9 +46,7 @@ import {
   clamp,
   displayLoginId,
   errorMessageOf,
-  isValidLoginId,
   makeId,
-  normalizeLoginId,
   nowIso,
   sessionDetailStorageKey,
   toFriendlyDbError,
@@ -163,11 +162,11 @@ export function useAppController() {
     try {
       const profileResult = await supabase.rpc('account_profile')
       if (profileResult.error) throw profileResult.error
-      const canonicalLoginId = profileResult.data?.[0]?.login_id
+      const canonicalLoginId = profileResult.data?.[0]?.username
       if (typeof canonicalLoginId === 'string' && canonicalLoginId !== user.user_metadata?.login_id) {
         // Local display identity only; administrator rights never use this metadata.
         setUser(previous => previous?.id === user.id
-          ? { ...previous, user_metadata: { ...previous.user_metadata, login_id: canonicalLoginId } }
+          ? { ...previous, user_metadata: { ...previous.user_metadata, login_id: canonicalLoginId, username: canonicalLoginId } }
           : previous)
       }
       const scriptsResult = await supabase
@@ -442,60 +441,29 @@ export function useAppController() {
     const client = supabase
     setAuthError('')
     setAuthNotice('')
-    const normalizedLoginId = normalizeLoginId(loginId)
-    if (!normalizedLoginId || !password) {
-      setAuthError('아이디와 비밀번호를 입력해 주세요.')
+    const email = signupEmail.trim().toLowerCase()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password) {
+      setAuthError('이메일과 비밀번호를 확인해 주세요.')
       return
     }
-
-    const saveProfile = async () => client.rpc('register_profile', {
-      p_login_id: normalizedLoginId,
-    })
-
     if (authMode === 'login') {
-      const { data: email, error: lookupError } = await client.rpc('email_for_login_id', {
-        input_login_id: normalizedLoginId,
-      })
-      if (lookupError) {
-        setAuthError(toFriendlyDbError(lookupError.message))
-        return
-      }
-      if (typeof email !== 'string' || !email) {
-        setAuthError('아이디 또는 비밀번호가 올바르지 않습니다.')
-        return
-      }
-      const result = await client.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (result.error) {
-        setAuthError(toFriendlyDbError(result.error.message))
-        return
-      }
-      const { error: profileError } = await saveProfile()
-      if (profileError) {
-        setAuthError(toFriendlyDbError(profileError.message))
-        return
-      }
+      const result = await client.auth.signInWithPassword({ email, password })
+      if (result.error) { setAuthError('이메일 또는 비밀번호를 확인해 주세요.'); return }
+      const { error } = await client.rpc('register_profile', { p_login_id: '' })
+      if (error) setAuthError('서비스 가입 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.')
       setPassword('')
       return
     }
-
-    const email = signupEmail.trim().toLowerCase()
-    if (!email) {
-      setAuthError('이메일을 입력해 주세요.')
+    const username = normalizeUsername(loginId)
+    if (!validUsername(username)) {
+      setAuthError('유저네임은 한글, 영문, 숫자와 . _ -를 사용해 2~32자로 입력해 주세요.')
       return
     }
-    if (!isValidLoginId(normalizedLoginId)) {
-      setAuthError('아이디는 영문 소문자, 숫자, 점, 밑줄, 하이픈 3~32자로 입력해 주세요.')
-      return
-    }
-
     const result = await client.auth.signUp({
       email,
       password,
       options: { data: {
-        login_id: normalizedLoginId,
+        username,
         signup_service: 'molip-script',
         ...(['지인 홍보', '커뮤니티', 'Instagram'].includes(signupSource ?? '')
           ? { signup_source: signupSource }
@@ -503,55 +471,14 @@ export function useAppController() {
       } },
     })
     if (result.error) {
-      const loweredMessage = result.error.message.toLowerCase()
-      if (
-        loweredMessage.includes('user already registered') ||
-        loweredMessage.includes('user already exists')
-      ) {
-        const loginResult = await client.auth.signInWithPassword({ email, password })
-        if (loginResult.error || !loginResult.data.user) {
-          setAuthError('이미 가입된 이메일입니다. 기존 비밀번호를 확인해 주세요.')
-          return
-        }
-        const { error: profileError } = await saveProfile()
-        if (profileError) {
-          setAuthError(toFriendlyDbError(profileError.message))
-          return
-        }
-        setAuthNotice('기존 계정을 입력한 아이디와 연결했습니다.')
-        setPassword('')
-        return
-      }
-      setAuthError(toFriendlyDbError(result.error.message))
+      setAuthError('가입하지 못했습니다. 이메일·유저네임·비밀번호를 확인해 주세요. 이미 가입했다면 로그인해 주세요.')
       return
     }
-    const identities = result.data.user?.identities
-    const mayBeExistingUser = Array.isArray(identities) && identities.length === 0
-
-    if (mayBeExistingUser) {
-      const loginResult = await client.auth.signInWithPassword({ email, password })
-      if (loginResult.error || !loginResult.data.user) {
-        setAuthError('이미 가입된 이메일입니다. 기존 비밀번호를 확인해 주세요.')
-        return
-      }
-      const { error: profileError } = await saveProfile()
-      if (profileError) {
-        setAuthError(toFriendlyDbError(profileError.message))
-        return
-      }
-      setAuthNotice('기존 계정을 입력한 아이디와 연결했습니다.')
-      setPassword('')
-      return
-    }
-
     if (!result.data.session) {
-      setAuthNotice('가입 확인 이메일을 보냈습니다. 이메일 인증 후 아이디로 로그인해 주세요.')
-    } else if (result.data.user) {
-      const { error: profileError } = await saveProfile()
-      if (profileError) {
-        setAuthError(toFriendlyDbError(profileError.message))
-        return
-      }
+      setAuthNotice('가입 확인 이메일을 확인한 후 이메일로 로그인해 주세요. 이미 가입한 이메일이라면 로그인 화면을 이용하세요.')
+    } else {
+      const { error } = await client.rpc('register_profile', { p_login_id: '' })
+      if (error) setAuthError('서비스 가입 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.')
     }
     setPassword('')
   }
@@ -1851,6 +1778,7 @@ export function useAppController() {
     recordMaskWords: async (words: string[]) => { if (selectedScript && words.length) await recordWords(selectedScript.id, words, 'masking') },
     setMaskTokens: async (tokens: number[]) => { if (await saveActiveFlashcard({ ...flashcardState(), visibleTokens: tokens })) setVisibleTokens(tokens) },
     user,
+    refreshAccountIdentity: (username: string, userId: string) => setUser(previous => previous?.id === userId && (previous.user_metadata?.username !== username || previous.user_metadata?.login_id !== username) ? { ...previous, user_metadata: { ...previous.user_metadata, username, login_id: username } } : previous),
     authMode,
     setAuthMode,
     loginId,

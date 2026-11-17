@@ -1,8 +1,10 @@
+import { useAccountProfile } from '../features/account-profile/model/useAccountProfile'
+import { missingProfileFields } from '../features/account-profile/model/profile'
 import { ErrorPage } from '../pages/error/ui/ErrorPage'
 import { useAdminAccess } from '../features/admin-access/model/useAdminAccess'
 import { PublisherPage } from '../pages/publisher/ui/PublisherPage'
 import { ContinuePage } from '../pages/home/ui/ContinuePage'
-import { lazy, Suspense } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import './styles/app.css'
 import { InstallAppBanner } from '../features/install-app'
 import { DashboardPage } from '../pages/home/ui/DashboardPage'
@@ -33,7 +35,7 @@ function App() {
     loginRequired, setLoginRequired, requestLogin, visibleTokens, setMaskTokens, recordMaskWords, maskingGrades,
     screen,
     setScreen,
-    user,
+    user, refreshAccountIdentity,
     authMode,
     setAuthMode,
     loginId,
@@ -155,6 +157,9 @@ function App() {
     saveCurrentDictationProgress,
   } = useAppController()
 
+  const account = useAccountProfile(user?.id ?? '')
+  const [dismissedProfileUser, setDismissedProfileUser] = useState('')
+  const missingProfile = account.profile ? missingProfileFields(account.profile) : []
   const admin = useAdminAccess(user?.id ?? '')
 
   if (!hasSupabase) return <SupabaseSetupPage />
@@ -244,6 +249,7 @@ function App() {
       ) : undefined}
     >
       {screen === 'home' && user && <InstallAppBanner />}
+      {user && missingProfile.length > 0 && dismissedProfileUser !== user.id && !['auth', 'profile', 'flashcard', 'dictation', 'masking', 'result'].includes(screen) && <aside className="profile-completion-notice" aria-label="회원 정보 입력 안내"><div><strong>회원 정보를 완성해 주세요.</strong><p>{missingProfile.join('·')} 정보가 비어 있어요. 내 정보에서 입력해 주세요.</p></div><div className="button-row"><button onClick={() => void navigateMain('profile')}>정보 입력</button><button className="text-btn" onClick={() => setDismissedProfileUser(user.id)}>나중에</button></div></aside>}
       <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
       {screen !== 'home' && screen !== 'about' && <Guide key={screen} screen={screen} />}
@@ -284,7 +290,7 @@ function App() {
   }
 
   if (screen === 'profile') {
-    return shell(user ? <ProfilePage user={user} store={store} onSignOut={signOut} onAbout={() => void navigateMain('about')} onAdmin={admin.isAdmin ? () => void navigateMain('admin') : undefined} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
+    return shell(user ? <ProfilePage user={user} profile={account.profile} profileError={account.error} onRetry={account.refresh} onProfileSaved={profile => { account.accept(profile); refreshAccountIdentity(profile.username, profile.id) }} store={store} onSignOut={signOut} onAbout={() => void navigateMain('about')} onAdmin={admin.isAdmin ? () => void navigateMain('admin') : undefined} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
   }
 
   if (screen === 'home' && user) return shell(<DashboardPage onMore={() => void navigateMain('continue')} store={store} onOpen={openScript} onResume={learning => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)} onCreate={() => openEditor()} onLibrary={() => void navigateMain('library')} onCommunity={() => void navigateMain('community')} onReview={id => { openScript(id); setStudyScope('weak'); setStudyError(''); setStudyModalOpen(true) }} />)
