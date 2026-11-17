@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../shared/api'
-import { Icon } from '../../../shared/ui'
+import { Icon, LoadingSkeleton } from '../../../shared/ui'
 import { date, number } from '../model/member'
 import type { Detail } from '../model/member'
 
@@ -42,7 +42,7 @@ export function AdminMemberPage({ memberId, onBack }: { memberId: string; onBack
     <div className="page-top"><div><button className="text-btn" onClick={onBack} disabled={saving}><Icon name="back" />회원 목록</button><h1 ref={heading} tabIndex={-1}>회원 상세</h1></div>
       {detail && !editing && <button onClick={() => { setUsername(detail.username || ''); setSource(detail.signup_source === '미선택' ? '' : detail.signup_source); setNotice(''); setEditing(true) }}><Icon name="pen" />정보 편집</button>}
     </div>
-    {error ? <p role="alert" className="error-text">{error}</p> : !detail ? <p role="status" className="admin-empty">회원 정보를 불러오는 중…</p> : <section className="admin-detail">
+    {error ? <p role="alert" className="error-text">{error}</p> : !detail ? <LoadingSkeleton view="admin-member" compact /> : <section className="admin-detail">
       <h2>{detail.login_id || '프로필 미등록'}</h2>
       {editing ? <form className="admin-edit-form" onSubmit={event => { event.preventDefault(); void save() }}>
         <p className="page-description">공용 프로필 편집은 전체 서비스 관리자만 저장할 수 있어요.</p><label className="field"><span>유저네임</span><input value={username} maxLength={32} required disabled={saving} onChange={event => setUsername(event.target.value)} /></label>

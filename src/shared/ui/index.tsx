@@ -101,15 +101,4 @@ export function Modal({ label, onClose, children }: { label: string; onClose?: (
   return <div ref={ref} tabIndex={-1} className="modal-backdrop" role="dialog" aria-modal="true" aria-label={label} onClick={(event) => { if (event.target === event.currentTarget) onClose?.() }}>{children}</div>
 }
 
-export function LoadingSkeleton({ view = 'home', compact = false }: { view?: string; compact?: boolean }) {
-  const study = view === 'flashcard' || view === 'dictation'
-  const detail = ['script', 'history', 'result'].includes(view)
-  return <section className={`skeleton-page skeleton-${view}`} role="status" aria-label="화면을 불러오는 중" aria-busy="true">
-    <span className="sr-only">학습 공간을 준비하고 있어요.</span>
-    <div aria-hidden="true">
-      {!compact && <div className="skeleton-heading"><div><span className="skeleton-block sk-eyebrow" /><span className="skeleton-block sk-title" /><span className="skeleton-block sk-description" /></div><span className="skeleton-block sk-button" /></div>}
-      {study ? <><div className="skeleton-block sk-progress" /><div className="skeleton-panel sk-study"><span className="skeleton-block sk-eyebrow" /><span className="skeleton-block sk-sentence" /><span className="skeleton-block sk-sentence short" />{view === 'dictation' && <div className="sk-blanks">{[0,1,2].map(i => <span className="skeleton-block" key={i} />)}</div>}</div><div className="sk-study-actions"><span className="skeleton-block sk-button" /><span className="skeleton-block sk-button" /></div></> : detail ? <div className="skeleton-panel sk-body">{Array.from({length:5}, (_, i) => <div className="sk-body-row" key={i}><span className="skeleton-block sk-number" /><div><span className="skeleton-block sk-description" /><span className="skeleton-block sk-sentence" /></div></div>)}</div> : view === 'community' ? <div className="sk-community-grid">{Array.from({length:4}, (_, i) => <div className="skeleton-panel sk-community-card" key={i}><span className="skeleton-block sk-cover" /><span className="skeleton-block sk-sentence" /><span className="skeleton-block sk-description" /></div>)}</div> : <><div className="sk-toolbar"><span className="skeleton-block sk-eyebrow" /><span className="skeleton-block sk-search" /></div><div className="sk-library">{Array.from({length:5}, (_, i) => <div className="skeleton-panel sk-library-row" key={i}><span className="skeleton-block sk-cover" /><div><span className="skeleton-block sk-sentence" /><span className="skeleton-block sk-description" /></div></div>)}</div></>}
-    </div>
-    <p className="loading-caption"><span className="spinner" aria-hidden="true" />학습 공간을 준비하고 있어요</p>
-  </section>
-}
+export { LoadingSkeleton, SkeletonValue } from './LoadingSkeleton'

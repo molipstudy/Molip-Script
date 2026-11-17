@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from '../../../shared/ui'
 import { ProgressDemo } from '../../../features/landing-story/ui/ProgressDemo'
 import { useRef } from 'react'
 import type { CommunityScript } from '../../../entities/community'
@@ -40,7 +41,7 @@ export function LandingPage({ signedIn, scripts, loading, onStart, onCommunity, 
 
     <section id="story-community" className="story-community" aria-labelledby="story-community-title">
       <h2 id="story-community-title">다른 사람이 만든 본문도 사용할 수 있어요.</h2>
-      {loading ? <p className="story-community-empty" role="status">공개 스크립트를 불러오는 중이에요.</p> : scripts.length ? <ul>{scripts.slice(0, 3).map(script => <li key={script.id}><button onClick={() => onSelect(script.id)}><span><strong>{script.title}</strong><small>{script.ownerLoginId} · 문장 {parseItems(script.rawText).length}개</small></span><span aria-hidden="true">→</span></button></li>)}</ul> : <p className="story-community-empty">지금은 보여드릴 공개 스크립트가 없어요. 직접 등록한 본문으로도 학습할 수 있어요.</p>}
+      {loading ? <LoadingSkeleton view="landing-community" compact /> : scripts.length ? <ul>{scripts.slice(0, 3).map(script => <li key={script.id}><button onClick={() => onSelect(script.id)}><span><strong>{script.title}</strong><small>{script.ownerLoginId} · 문장 {parseItems(script.rawText).length}개</small></span><span aria-hidden="true">→</span></button></li>)}</ul> : <p className="story-community-empty">지금은 보여드릴 공개 스크립트가 없어요. 직접 등록한 본문으로도 학습할 수 있어요.</p>}
       <button className="text-btn story-community-link" onClick={onCommunity}>커뮤니티 둘러보기 →</button>
     </section>
 

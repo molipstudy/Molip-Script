@@ -1,3 +1,4 @@
+import { parseAppPath } from './lib/routing'
 import { useAccountProfile } from '../features/account-profile/model/useAccountProfile'
 import { missingProfileFields } from '../features/account-profile/model/profile'
 import { ErrorPage } from '../pages/error/ui/ErrorPage'
@@ -165,8 +166,8 @@ function App() {
   if (!hasSupabase) return <SupabaseSetupPage />
 
   if (!isAuthReady || isLoadingStore) {
-    const loadingRoute = window.location.pathname.split('/').filter(Boolean)
-    const loadingView = loadingRoute[0] === 'community' && loadingRoute[1] ? 'script' : (loadingRoute[1] || loadingRoute[0] || 'home')
+    const route = parseAppPath(window.location.pathname)
+    const loadingView = route.adminMemberId ? 'admin-member' : route.communityId ? 'script' : route.screen === 'home' && !user ? 'about' : route.screen
     return <AppLoadingPage view={loadingView} />
   }
 
@@ -250,7 +251,7 @@ function App() {
     >
       {screen === 'home' && user && <InstallAppBanner />}
       {user && missingProfile.length > 0 && dismissedProfileUser !== user.id && !['auth', 'profile', 'flashcard', 'dictation', 'masking', 'result'].includes(screen) && <aside className="profile-completion-notice" aria-label="회원 정보 입력 안내"><div><strong>회원 정보 확인이 필요해요</strong><p>{missingProfile.join('·')} 정보를 추가해 주세요. 계정을 더 편리하게 이용할 수 있어요.</p></div><div className="button-row"><button className="primary-btn" onClick={() => void navigateMain('profile')}>회원 정보 입력하기</button><button className="text-btn" onClick={() => setDismissedProfileUser(user.id)}>나중에</button></div></aside>}
-      <Suspense fallback={<LoadingSkeleton view={screen} />}>{content}</Suspense>
+      <Suspense fallback={<LoadingSkeleton view={screen === 'admin' && adminMemberId ? 'admin-member' : screen === 'community' && selectedCommunityId ? 'script' : screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
       {screen !== 'home' && screen !== 'about' && <Guide key={screen} screen={screen} />}
       {loginRequired && <div className="login-overlay" role="dialog" aria-modal="true" aria-label="로그인 안내"><section className="result-card"><h2>로그인이 필요한 기능이에요</h2><p>내 스크립트와 개인 학습 기록을 계정에 안전하게 보관하세요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setLoginRequired(false); setScreen('auth') }}>로그인하기</button><button onClick={() => setLoginRequired(false)}>계속 둘러보기</button></div></section></div>}
@@ -261,7 +262,7 @@ function App() {
   if (screen === 'not-found') return errorPage(404)
   if (screen === 'forbidden') return errorPage(403)
   if (screen === 'admin') {
-    if (admin.pending) return shell(<section className="result-card"><p role="status">불러오는 중…</p></section>)
+    if (admin.pending) return shell(<LoadingSkeleton view={adminMemberId ? 'admin-member' : 'admin'} />)
     if (admin.error) return errorPage(503, admin.refresh)
     if (!user || !admin.isAdmin) return errorPage(403)
     return shell(<AdminPage key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)

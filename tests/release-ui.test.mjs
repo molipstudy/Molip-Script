@@ -20,7 +20,8 @@ const moduleUrl = async (path, replacements = []) => {
 }
 const text = await moduleUrl('../src/entities/script/lib/script-text.ts')
 const lib = await moduleUrl('../src/shared/lib/app-utils.ts')
-const ui = await moduleUrl('../src/shared/ui/index.tsx')
+const skeleton = await moduleUrl('../src/shared/ui/LoadingSkeleton.tsx')
+const ui = await moduleUrl('../src/shared/ui/index.tsx', [["'./LoadingSkeleton'", JSON.stringify(skeleton)]])
 const dashboard = await moduleUrl('../src/pages/home/lib/dashboard.ts', [["'../../../entities/script'", JSON.stringify(text)]])
 const cards = await moduleUrl('../src/pages/home/ui/LearningCards.tsx', [["'../../../shared/lib'", JSON.stringify(lib)], ["'../../../shared/ui'", JSON.stringify(ui)], ["'../lib/dashboard'", JSON.stringify(dashboard)]])
 const replacements = [["'./LearningCards'", JSON.stringify(cards)], ["'../../../shared/ui'", JSON.stringify(ui)], ["'../lib/dashboard'", JSON.stringify(dashboard)]]
@@ -64,4 +65,15 @@ test('publisher profiles and full continuation pages survive direct route naviga
   const publisherId = 'ce19e19d-7ce2-4dc6-854d-05f51d5c5459'
   assert.deepEqual(parseAppPath(pathForScreen('publisher', null, null, null, publisherId)), { screen: 'publisher', scriptId: null, publisherId })
   assert.deepEqual(parseAppPath('/continue'), { screen: 'continue', scriptId: null })
+})
+
+test('page skeletons expose one loading announcement while decorative shapes stay inaccessible', async () => {
+  const { LoadingSkeleton } = await import(skeleton)
+  for (const view of ['admin', 'admin-member', 'profile-fields', 'masking', 'community', 'auth', 'editor']) {
+    const html = renderToStaticMarkup(createElement(LoadingSkeleton, { view }))
+    assert.equal((html.match(/role="status"/g) || []).length, 1)
+    assert.ok(html.includes('aria-busy="true"'))
+    assert.ok(html.includes('aria-hidden="true"'))
+    assert.ok(!/<(button|input|select|a)[ >]/.test(html))
+  }
 })

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../shared/api'
-import { Icon } from '../../../shared/ui'
+import { Icon, LoadingSkeleton, SkeletonValue } from '../../../shared/ui'
 import { AdminMemberPage } from './AdminMemberPage'
 import './admin.css'
 
@@ -74,17 +74,17 @@ export function AdminPage({ memberId, onSelectMember }: { memberId: string | nul
     <div className="page-top"><div><p className="eyebrow">Molip Study</p><h1>관리자</h1><p className="page-description">회원과 서비스 현황을 확인하세요.</p></div><button onClick={refresh}><Icon name="reset" />새로고침</button></div>
     <nav className="admin-service-links" aria-label="서비스 관리 바로가기">{[['Vercel', 'https://vercel.com/z1hxn/molip-script'], ['GitHub', 'https://github.com/molipstudy/Molip-Script'], ['Supabase', 'https://supabase.com/dashboard/project/fdmcqpomrywuobbrmnyl']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer">{label}<Icon name="arrow" /></a>)}</nav>
     <div className="admin-overview">
-      <article><span>전체 회원</span><strong>{overview ? number(overview.total_members) : list ? number(list.total_members) : '—'}</strong></article>
-      <article><span>최근 7일 신규 가입</span><strong>{overview ? number(overview.new_members_7d) : '—'}</strong><small>{overview ? `최근 24시간 ${number(overview.new_members_24h)}명` : overviewError ? '가입 통계를 불러오지 못했어요' : '확인 중…'}</small></article>
-      <article><span>최근 24시간 방문자</span><strong>{traffic?.recent ? number(traffic.recent.visitors) : '—'}</strong></article>
-      <article><span>최근 24시간 페이지 조회</span><strong>{traffic?.recent ? number(traffic.recent.pageviews) : '—'}</strong></article>
-      <article><span>최근 7일 방문자</span><strong>{traffic?.connected ? number(traffic.visitors!) : '—'}</strong></article>
-      <article><span>최근 7일 페이지 조회</span><strong>{traffic?.connected ? number(traffic.pageviews!) : '—'}</strong></article>
+      <article><span>전체 회원</span><strong>{overview ? number(overview.total_members) : list ? number(list.total_members) : loading ? <SkeletonValue /> : '—'}</strong></article>
+      <article><span>최근 7일 신규 가입</span><strong>{overview ? number(overview.new_members_7d) : !overviewError ? <SkeletonValue /> : '—'}</strong><small>{overview ? `최근 24시간 ${number(overview.new_members_24h)}명` : overviewError ? '가입 통계를 불러오지 못했어요' : '확인 중…'}</small></article>
+      <article><span>최근 24시간 방문자</span><strong>{traffic?.recent ? number(traffic.recent.visitors) : !traffic && !trafficError ? <SkeletonValue /> : '—'}</strong></article>
+      <article><span>최근 24시간 페이지 조회</span><strong>{traffic?.recent ? number(traffic.recent.pageviews) : !traffic && !trafficError ? <SkeletonValue /> : '—'}</strong></article>
+      <article><span>최근 7일 방문자</span><strong>{traffic?.connected ? number(traffic.visitors!) : !traffic && !trafficError ? <SkeletonValue /> : '—'}</strong></article>
+      <article><span>최근 7일 페이지 조회</span><strong>{traffic?.connected ? number(traffic.pageviews!) : !traffic && !trafficError ? <SkeletonValue /> : '—'}</strong></article>
     </div>
     <div className="admin-traffic-note" role="status">{trafficError ? '방문 통계를 불러오지 못했습니다. 연결 상태를 확인해 주세요.' : traffic?.connected ? `운영 사이트 · ${date(traffic.since!)} ~ ${date(traffic.until!)}` : traffic?.message || '방문 통계 확인 중…'} <a href="https://vercel.com/z1hxn/molip-script/analytics" target="_blank" rel="noreferrer">Vercel에서 보기 <Icon name="arrow" /></a></div>
     <div className="admin-analytics-panels">
-      <section aria-labelledby="popular-pages-title"><h2 id="popular-pages-title">최근 7일 인기 페이지</h2>{!traffic?.pages ? <p className="muted">{trafficError || traffic ? '페이지 통계를 불러오지 못했어요' : '확인 중…'}</p> : !traffic.pages.length ? <p className="muted">아직 집계된 방문이 없어요</p> : <div className="admin-table-scroll"><table><thead><tr><th>페이지</th><th>방문자</th><th>조회</th></tr></thead><tbody>{traffic.pages.map(row => <tr key={row.path}><th scope="row">{row.path === 'Others' ? '기타 페이지' : row.path}</th><td>{number(row.visitors)}</td><td>{number(row.pageviews)}</td></tr>)}</tbody></table></div>}</section>
-      <section aria-labelledby="daily-visits-title"><h2 id="daily-visits-title">일별 방문</h2><p className="admin-period-label">최근 7일 · UTC 기준</p>{!traffic?.daily ? <p className="muted">{trafficError || traffic ? '일별 통계를 불러오지 못했어요' : '확인 중…'}</p> : !traffic.daily.length ? <p className="muted">아직 집계된 방문이 없어요</p> : <div className="admin-table-scroll"><table><thead><tr><th>날짜</th><th>방문자</th><th>조회</th></tr></thead><tbody>{traffic.daily.map(row => <tr key={row.timestamp}><th scope="row">{new Date(row.timestamp).toLocaleDateString('ko-KR', { timeZone: 'UTC', month: 'numeric', day: 'numeric' })}</th><td>{number(row.visitors)}</td><td>{number(row.pageviews)}</td></tr>)}</tbody></table></div>}</section>
+      <section aria-labelledby="popular-pages-title"><h2 id="popular-pages-title">최근 7일 인기 페이지</h2>{!traffic?.pages ? trafficError || traffic ? <p className="muted">페이지 통계를 불러오지 못했어요</p> : <LoadingSkeleton view="analytics-table" compact /> : !traffic.pages.length ? <p className="muted">아직 집계된 방문이 없어요</p> : <div className="admin-table-scroll"><table><thead><tr><th>페이지</th><th>방문자</th><th>조회</th></tr></thead><tbody>{traffic.pages.map(row => <tr key={row.path}><th scope="row">{row.path === 'Others' ? '기타 페이지' : row.path}</th><td>{number(row.visitors)}</td><td>{number(row.pageviews)}</td></tr>)}</tbody></table></div>}</section>
+      <section aria-labelledby="daily-visits-title"><h2 id="daily-visits-title">일별 방문</h2><p className="admin-period-label">최근 7일 · UTC 기준</p>{!traffic?.daily ? trafficError || traffic ? <p className="muted">일별 통계를 불러오지 못했어요</p> : <LoadingSkeleton view="analytics-table" compact /> : !traffic.daily.length ? <p className="muted">아직 집계된 방문이 없어요</p> : <div className="admin-table-scroll"><table><thead><tr><th>날짜</th><th>방문자</th><th>조회</th></tr></thead><tbody>{traffic.daily.map(row => <tr key={row.timestamp}><th scope="row">{new Date(row.timestamp).toLocaleDateString('ko-KR', { timeZone: 'UTC', month: 'numeric', day: 'numeric' })}</th><td>{number(row.visitors)}</td><td>{number(row.pageviews)}</td></tr>)}</tbody></table></div>}</section>
     </div>
     <div className="admin-members-layout">
       <section className="admin-members" aria-labelledby="admin-members-title">
@@ -94,7 +94,7 @@ export function AdminPage({ memberId, onSelectMember }: { memberId: string | nul
           <label className="field"><span>가입 경로</span><select value={source} onChange={event => { updateFilters(); setPage(0); setSource(event.target.value) }}><option value="">전체</option>{['지인 홍보','커뮤니티','Instagram','미선택'].map(value => <option key={value}>{value}</option>)}</select></label>
           <button className="primary-btn" type="submit">검색</button>
         </form>
-        {loading ? <p role="status" className="admin-empty">회원을 불러오는 중…</p> : error ? <p role="alert" className="error-text">{error}</p> : !list?.items.length ? <p className="admin-empty">조건에 맞는 회원이 없습니다.</p> : <div className="admin-member-list">{list.items.map(member => <button key={member.id} className="admin-member" onClick={() => onSelectMember(member.id)}>
+        {loading ? <LoadingSkeleton view="member-list" compact /> : error ? <p role="alert" className="error-text">{error}</p> : !list?.items.length ? <p className="admin-empty">조건에 맞는 회원이 없습니다.</p> : <div className="admin-member-list">{list.items.map(member => <button key={member.id} className="admin-member" onClick={() => onSelectMember(member.id)}>
           <span className="admin-member-identity"><strong>{member.username || '프로필 미등록'}</strong><span>{member.email || '이메일 없음'}</span><small>{date(member.created_at)}</small></span>
           <span className="admin-member-source">{member.signup_source}<Icon name="chevron" /></span>
         </button>)}</div>}
