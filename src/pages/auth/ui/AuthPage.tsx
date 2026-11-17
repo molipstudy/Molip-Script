@@ -1,4 +1,5 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useState } from 'react'
+import type { SignupDetails } from '../../../features/account-profile/model/profile'
 import { AsyncButton, IconButton } from '../../../shared/ui'
 
 type AuthMode = 'login' | 'signup'
@@ -14,7 +15,7 @@ type AuthPageProps = {
   onLoginIdChange: (value: string) => void
   onEmailChange: (value: string) => void
   onPasswordChange: (value: string) => void
-  onSubmit: (signupSource?: string) => Promise<unknown>
+  onSubmit: (details?: SignupDetails) => Promise<unknown>
 }
 
 export function AuthPage({
@@ -32,15 +33,17 @@ export function AuthPage({
 }: AuthPageProps) {
   const [signupSource, setSignupSource] = useState('')
   const [loginNoticeDismissed, setLoginNoticeDismissed] = useState(false)
-  const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.currentTarget.closest('section')?.querySelector<HTMLButtonElement>('.full-btn')?.click()
-    }
+  const [fullName, setFullName] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const submit = async () => {
+    const form = document.getElementById('auth-form') as HTMLFormElement | null
+    if (!form?.reportValidity()) return
+    await onSubmit(mode === 'signup' ? { fullName, phoneNumber, signupSource } : undefined)
   }
 
   return (
     <section className="auth-page" aria-label="로그인 및 회원가입">
-      <section className={`auth-card ${mode === 'signup' ? 'signup-mode' : 'login-mode'}`}>
+      <form id="auth-form" onSubmit={event => { event.preventDefault(); event.currentTarget.querySelector<HTMLButtonElement>('.full-btn')?.click() }} className={`auth-card ${mode === 'signup' ? 'signup-mode' : 'login-mode'}`}>
         <div className="auth-head">
           <img src="/logo/logo.png" alt="몰입 스터디" className="auth-logo" />
           <div>
@@ -56,22 +59,26 @@ export function AuthPage({
         </div>
 
         <div className="auth-mode-tabs" role="group" aria-label="인증 모드">
-          <button className={mode === 'login' ? 'active' : ''} onClick={() => onModeChange('login')}>로그인</button>
-          <button className={mode === 'signup' ? 'active' : ''} onClick={() => onModeChange('signup')}>회원가입</button>
+          <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => onModeChange('login')}>로그인</button>
+          <button className={mode === 'signup' ? 'active' : ''} type="button" onClick={() => onModeChange('signup')}>회원가입</button>
         </div>
 
-        {mode === 'login' && !loginNoticeDismissed && <div className="auth-login-change" role="status"><div><strong>이메일 로그인으로 변경됐어요</strong><p>기존 아이디 대신 가입한 이메일을 입력해 주세요</p></div><IconButton icon="close" label="로그인 안내 닫기" onClick={() => setLoginNoticeDismissed(true)} /></div>}
-        {mode === 'signup' && <label className="field"><span>유저네임</span><input value={loginId} onChange={event => onLoginIdChange(event.target.value)} autoComplete="nickname" maxLength={32} /><small>한글, 영문, 숫자로 나를 표현해 보세요. 커뮤니티에 공개됩니다.</small></label>}
-        <label className="field"><span>이메일</span><input name="email" value={email} onChange={event => onEmailChange(event.target.value)} onKeyDown={submitOnEnter} type="email" autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="name@example.com" /></label>
+        {mode === 'login' && !loginNoticeDismissed && <div className="auth-login-change" role="status"><div><strong>이메일 로그인으로 변경됐어요</strong><p>기존 아이디 대신 가입한 이메일을 입력해 주세요</p></div><IconButton type="button" icon="close" label="로그인 안내 닫기" onClick={() => setLoginNoticeDismissed(true)} /></div>}
+        {mode === 'signup' && <label className="field"><span>유저네임</span><input required name="username" value={loginId} onChange={event => onLoginIdChange(event.target.value)} autoComplete="nickname" maxLength={32} /><small>한글, 영문, 숫자로 나를 표현해 보세요. 커뮤니티에 공개됩니다.</small></label>}
+        <label className="field"><span>이메일</span><input required name="email" value={email} onChange={event => onEmailChange(event.target.value)} type="email" autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="name@example.com" /></label>
         <label className="field">
           <span>비밀번호</span>
-          <input value={password} onChange={(event) => onPasswordChange(event.target.value)} onKeyDown={submitOnEnter} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} name="password" />
+          <input required minLength={mode === 'signup' ? 6 : undefined} value={password} onChange={(event) => onPasswordChange(event.target.value)} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} name="password" />
         </label>
+        {mode === 'signup' && <>
+          <label className="field"><span>이름</span><input required name="full_name" autoComplete="name" maxLength={80} value={fullName} onChange={event => setFullName(event.target.value)} /></label>
+          <label className="field"><span>전화번호</span><input required name="phone_number" type="tel" autoComplete="tel" maxLength={24} placeholder="01012345678" value={phoneNumber} onChange={event => setPhoneNumber(event.target.value)} /><small>이름과 전화번호는 다른 회원에게 공개되지 않아요.</small></label>
+        </>}
         {mode === 'signup' && (
           <label className="field">
-            <span>가입 경로 <span className="muted">(선택)</span></span>
-            <select value={signupSource} onChange={(event) => setSignupSource(event.target.value)}>
-              <option value="">선택하지 않음</option>
+            <span>가입 경로</span>
+            <select required name="signup_source" value={signupSource} onChange={(event) => setSignupSource(event.target.value)}>
+              <option value="" disabled>가입 경로를 선택해 주세요</option>
               <option value="지인 홍보">지인 홍보</option>
               <option value="커뮤니티">커뮤니티</option>
               <option value="Instagram">Instagram</option>
@@ -80,10 +87,11 @@ export function AuthPage({
         )}
         {error && <p className="error-text">{error}</p>}
         {notice && <p className="notice-text">{notice}</p>}
-        <AsyncButton className="primary-btn full-btn" onAction={() => onSubmit(mode === 'signup' ? signupSource : undefined)}>
+        <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
+        <AsyncButton type="button" className="primary-btn full-btn" onAction={submit}>
           {mode === 'login' ? '로그인' : '회원가입'}
         </AsyncButton>
-      </section>
+      </form>
     </section>
   )
 }

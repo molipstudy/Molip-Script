@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { normalizeUsername, validUsername } from '../../features/account-profile/model/profile'
+import { normalizePhone, normalizeUsername, signupDetailsError, validUsername, type SignupDetails } from '../../features/account-profile/model/profile'
 import { createLearningSaveQueue, queueUnknown } from '../../entities/learning/lib/masking'
 import type { TokenVisibilityUpdate } from '../../entities/learning/lib/masking'
 import { trialScript, TRIAL_ID } from '../../entities/script/model/trial'
@@ -443,7 +443,7 @@ export function useAppController() {
     return user.id
   }
 
-  const handleAuth = async (signupSource?: string) => {
+  const handleAuth = async (details?: SignupDetails) => {
     if (!supabase) return
     const client = supabase
     setAuthError('')
@@ -466,15 +466,17 @@ export function useAppController() {
       setAuthError('유저네임은 한글, 영문, 숫자와 . _ -를 사용해 2~32자로 입력해 주세요.')
       return
     }
+    const detailsError = signupDetailsError(details)
+    if (detailsError) { setAuthError(detailsError); return }
     const result = await client.auth.signUp({
       email,
       password,
       options: { data: {
         username,
         signup_service: 'molip-script',
-        ...(['지인 홍보', '커뮤니티', 'Instagram'].includes(signupSource ?? '')
-          ? { signup_source: signupSource }
-          : {}),
+        full_name: details!.fullName.trim(),
+        phone_number: normalizePhone(details!.phoneNumber),
+        signup_source: details!.signupSource,
       } },
     })
     if (result.error) {

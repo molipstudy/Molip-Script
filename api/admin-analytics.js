@@ -27,7 +27,7 @@ export async function handleAnalytics(req, res, { env = process.env, fetcher = f
       if (env.MOLIP_VERCEL_TEAM_ID) url.searchParams.set('teamId', env.MOLIP_VERCEL_TEAM_ID)
       url.searchParams.set('since', new Date(from).toISOString())
       url.searchParams.set('until', new Date(until).toISOString())
-      if (by) { url.searchParams.set('by', JSON.stringify([by])); url.searchParams.set('limit', by === 'day' ? '10' : '5') }
+      if (by) { url.searchParams.set('by', by); url.searchParams.set('limit', by === 'day' ? '10' : '5') }
       const result = await fetcher(url, { headers: { Authorization: `Bearer ${env.MOLIP_VERCEL_ANALYTICS_TOKEN}` }, signal: AbortSignal.timeout(8000) })
       return result
     }

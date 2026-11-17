@@ -7,3 +7,12 @@ export const normalizePhone = (value: string) => {
 }
 export const validPhone = (value: string) => !value.trim() || /^\+[1-9]\d{7,14}$/.test(normalizePhone(value))
 export const missingProfileFields = (profile: AccountProfile) => [!profile.full_name?.trim() && '이름', !profile.phone_number?.trim() && '전화번호'].filter(Boolean) as string[]
+
+export type SignupDetails = { fullName: string; phoneNumber: string; signupSource: string }
+export function signupDetailsError(details?: SignupDetails): string {
+  const name = details?.fullName.trim() || ''
+  if (!name || name.length > 80 || Array.from(name).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return '이름을 1~80자로 입력해 주세요.'
+  if (!details?.phoneNumber.trim() || !validPhone(details.phoneNumber)) return '전화번호를 확인해 주세요. 국내 휴대전화는 010으로 입력하세요.'
+  if (!['지인 홍보', '커뮤니티', 'Instagram'].includes(details.signupSource)) return '가입 경로를 선택해 주세요.'
+  return ''
+}
