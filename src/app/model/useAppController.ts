@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { normalizeUsername, validUsername } from '../../features/account-profile/model/profile'
-import { queueUnknown } from '../../entities/learning/lib/masking'
+import { createLearningSaveQueue, queueUnknown } from '../../entities/learning/lib/masking'
+import type { TokenVisibilityUpdate } from '../../entities/learning/lib/masking'
 import { trialScript, TRIAL_ID } from '../../entities/script/model/trial'
 import { supabase } from '../../shared/api'
 import type { RouteTarget, Screen } from '../../shared/model/navigation'
@@ -101,7 +102,13 @@ export function useAppController() {
   const [dictationBlankPercent, setDictationBlankPercent] = useState(30)
   const [trackFlashWords, setTrackFlashWords] = useState(true)
   const [maskingGrades, setMaskingGrades] = useState<Record<string, boolean>>({})
-  const [visibleTokens, setVisibleTokens] = useState<number[]>([])
+  const [visibleTokens, setVisibleTokensState] = useState<number[]>([])
+  const visibleTokensRef = useRef<number[]>([])
+  const learningSaveQueue = useRef(createLearningSaveQueue())
+  const setVisibleTokens = (tokens: number[]) => {
+    visibleTokensRef.current = tokens
+    setVisibleTokensState(tokens)
+  }
   const [flashQueue, setFlashQueue] = useState<number[]>([])
   const [flashIndex, setFlashIndex] = useState(0)
   const [flashRevealed, setFlashRevealed] = useState(false)
@@ -1158,7 +1165,7 @@ export function useAppController() {
     revealed,
     unknownIndexes,
     trackWords: trackFlashWords,
-    visibleTokens,
+    visibleTokens: visibleTokensRef.current,
     maskingGrades,
   })
 
@@ -1171,7 +1178,7 @@ export function useAppController() {
     const progress = reset
       ? 1
       : Math.max(selectedActiveFlashcard?.progress ?? 0, state.currentIndex + 1)
-    return saveActiveLearning(kind, selectedScript.id, modeForScope(studyScope), state, progress)
+    return learningSaveQueue.current(() => saveActiveLearning(kind, selectedScript.id, modeForScope(studyScope), state, progress))
   }
 
   const startFlashcard = async () => {
@@ -1776,7 +1783,12 @@ export function useAppController() {
     visibleTokens,
     maskingGrades,
     recordMaskWords: async (words: string[]) => { if (selectedScript && words.length) await recordWords(selectedScript.id, words, 'masking') },
-    setMaskTokens: async (tokens: number[]) => { if (await saveActiveFlashcard({ ...flashcardState(), visibleTokens: tokens })) setVisibleTokens(tokens) },
+    setMaskTokens: async (update: TokenVisibilityUpdate) => {
+      const tokens = typeof update === 'function' ? update(visibleTokensRef.current) : update
+      setVisibleTokens(tokens)
+      try { await saveActiveFlashcard({ ...flashcardState(), visibleTokens: tokens }) }
+      catch { setSyncError('학습 진행을 저장하지 못했어요. 연결 상태를 확인하고 다시 저장해 주세요.') }
+    },
     user,
     refreshAccountIdentity: (username: string, userId: string) => setUser(previous => previous?.id === userId && (previous.user_metadata?.username !== username || previous.user_metadata?.login_id !== username) ? { ...previous, user_metadata: { ...previous.user_metadata, username, login_id: username } } : previous),
     authMode,

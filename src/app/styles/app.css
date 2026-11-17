@@ -2263,3 +2263,9 @@ input[type='checkbox'] { accent-color: var(--primary); width: 16px; height: 16px
  .community-counts { gap:10px; }
  .profile-completion-notice { padding:18px; }
 }
+
+.mask-controls { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:12px; }
+.mask-controls .button-row { margin:0; }
+.mask-reveal-next { display:inline-flex; align-items:center; gap:8px; min-height:44px; border-color:#d4caf3; color:var(--primary-dark); background:#f5f2ff; }
+.mask-token, .mask-controls button { touch-action:manipulation; }
+.mask-token { user-select:none; -webkit-user-select:none; }
