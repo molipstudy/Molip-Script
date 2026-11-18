@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { SignupDetails } from '../../../features/account-profile/model/profile'
-import { AsyncButton, IconButton } from '../../../shared/ui'
+import { IconButton } from '../../../shared/ui'
 
 type AuthMode = 'login' | 'signup'
 
@@ -32,18 +32,24 @@ export function AuthPage({
   onSubmit,
 }: AuthPageProps) {
   const [signupSource, setSignupSource] = useState('')
+  const [signupSourceOther, setSignupSourceOther] = useState('')
+  const [busy, setBusy] = useState(false)
+  const locked = useRef(false)
   const [loginNoticeDismissed, setLoginNoticeDismissed] = useState(false)
   const [fullName, setFullName] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const submit = async () => {
     const form = document.getElementById('auth-form') as HTMLFormElement | null
-    if (!form?.reportValidity()) return
-    await onSubmit(mode === 'signup' ? { fullName, phoneNumber, signupSource } : undefined)
+    if (locked.current || !form?.reportValidity()) return
+    locked.current = true
+    setBusy(true)
+    try { await onSubmit(mode === 'signup' ? { fullName, phoneNumber, signupSource, signupSourceOther: signupSource === '기타' ? signupSourceOther.trim() : '' } : undefined) }
+    finally { locked.current = false; setBusy(false) }
   }
 
   return (
     <section className="auth-page" aria-label="로그인 및 회원가입">
-      <form id="auth-form" onSubmit={event => { event.preventDefault(); event.currentTarget.querySelector<HTMLButtonElement>('.full-btn')?.click() }} className={`auth-card ${mode === 'signup' ? 'signup-mode' : 'login-mode'}`}>
+      <form id="auth-form" onSubmit={event => { event.preventDefault(); void submit() }} className={`auth-card ${mode === 'signup' ? 'signup-mode' : 'login-mode'}`}>
         <div className="auth-head">
           <img src="/logo/logo.png" alt="몰입 스터디" className="auth-logo" />
           <div>
@@ -59,8 +65,8 @@ export function AuthPage({
         </div>
 
         <div className="auth-mode-tabs" role="group" aria-label="인증 모드">
-          <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => onModeChange('login')}>로그인</button>
-          <button className={mode === 'signup' ? 'active' : ''} type="button" onClick={() => onModeChange('signup')}>회원가입</button>
+          <button className={mode === 'login' ? 'active' : ''} type="button" disabled={busy} onClick={() => onModeChange('login')}>로그인</button>
+          <button className={mode === 'signup' ? 'active' : ''} type="button" disabled={busy} onClick={() => onModeChange('signup')}>회원가입</button>
         </div>
 
         {mode === 'login' && !loginNoticeDismissed && <div className="auth-login-change" role="status"><div><strong>이메일 로그인으로 변경됐어요</strong><p>기존 아이디 대신 가입한 이메일을 입력해 주세요</p></div><IconButton type="button" icon="close" label="로그인 안내 닫기" onClick={() => setLoginNoticeDismissed(true)} /></div>}
@@ -82,15 +88,17 @@ export function AuthPage({
               <option value="지인 홍보">지인 홍보</option>
               <option value="커뮤니티">커뮤니티</option>
               <option value="Instagram">Instagram</option>
+              <option value="기타">기타</option>
             </select>
           </label>
         )}
+        {mode === 'signup' && signupSource === '기타' && <label className="field"><span>기타 가입 경로</span><input required name="signup_source_other" value={signupSourceOther} maxLength={120} placeholder="몰입 스터디를 어떻게 알게 되셨나요?" onChange={event => setSignupSourceOther(event.target.value)} /></label>}
         {error && <p className="error-text">{error}</p>}
         {notice && <p className="notice-text">{notice}</p>}
-        <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
-        <AsyncButton type="button" className="primary-btn full-btn" onAction={submit}>
+        <button type="submit" className="primary-btn full-btn" disabled={busy} aria-busy={busy}>
+          {busy && <span className="spinner" aria-hidden="true" />}
           {mode === 'login' ? '로그인' : '회원가입'}
-        </AsyncButton>
+        </button>
       </form>
     </section>
   )

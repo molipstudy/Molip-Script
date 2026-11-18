@@ -12,3 +12,8 @@
 관리자 이메일 편집에는 Vercel Production 환경 변수 `SUPABASE_SECRET_KEY` 또는 기존 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. 서버 전용 secret/service-role 키를 사용하며 `VITE_` 접두사를 붙이지 않습니다. 공개 publishable/anon 키와 다릅니다.
 
 이메일은 Auth 관리자 API로 변경합니다. 비밀번호·UUID·관리자 권한·이메일 인증 플래그는 변경 요청에 포함하지 않습니다. 이메일 변경 실패 시 다른 프로필 항목의 저장 여부를 따로 안내합니다.
+
+## 추가 적용
+
+- `../signup-source-other-upgrade.sql`: 위 회원 관리 SQL 다음에 실행합니다. 가입 경로 ‘기타’와 별도 상세 문구를 저장하고 관리자 목록·필터·편집을 갱신합니다.
+- `../support-upgrade.sql`: 사이트 문의·답변 기능을 추가합니다. `molip_support`는 비공개 저장 스키마이므로 Exposed schemas에 추가하지 않습니다. 기존 노출 스키마 `molip_script`의 권한 확인 RPC만 사용합니다. 별도 이메일 발송 설정은 필요하지 않습니다.

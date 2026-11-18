@@ -14,7 +14,7 @@ const MemberList = () => <div className="sk-member-list">{repeat(5, () => <div c
 const Study = ({ view }: { view: string }) => <><Block shape="progress" /><div className={`skeleton-panel sk-study sk-study-${view}`}><Block shape="eyebrow" /><Block shape="sentence" /><Block shape="sentence short" />{view === 'dictation' && <div className="sk-blanks">{repeat(3, () => <Block shape="input" />)}</div>}{view === 'masking' && <div className="sk-mask-tokens">{repeat(12, index => <Block shape={index % 3 === 0 ? 'token wide' : 'token'} />)}</div>}{view === 'flashcard' && <Block shape="description" />}</div><div className="sk-study-actions"><Block shape="button" /><Block shape="button" /></div></>
 
 const labels: Record<string, string> = {
-  home: '학습 홈', about: '서비스 소개', library: '내 스크립트', continue: '학습 이어하기',
+  support: '문의 목록', 'admin-support': '문의함', 'support-detail': '문의 대화', home: '학습 홈', about: '서비스 소개', library: '내 스크립트', continue: '학습 이어하기',
   auth: '로그인', profile: '내 정보', 'profile-fields': '회원 정보', publisher: '게시자 프로필',
   admin: '관리자 현황', 'admin-member': '회원 상세', 'member-list': '회원 목록', 'analytics-table': '방문 통계',
   community: '커뮤니티', 'landing-community': '공개 스크립트', script: '스크립트 본문',
@@ -25,6 +25,8 @@ const labels: Record<string, string> = {
 function Content({ view, compact }: { view: string; compact: boolean }) {
   if (['flashcard', 'dictation', 'masking'].includes(view)) return <Study view={view} />
   if (view === 'profile-fields') return <Fields count={3} />
+  if (view === 'support' || view === 'admin-support') return <MemberList />
+  if (view === 'support-detail') return <div className="skeleton-panel sk-body"><Block shape="title" /><Fields count={3} /><Block shape="textarea" /></div>
   if (view === 'member-list') return <MemberList />
   if (view === 'analytics-table') return <Table />
   if (view === 'landing-community') return <Rows count={3} />

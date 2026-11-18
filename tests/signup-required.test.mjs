@@ -35,5 +35,8 @@ test('signup validation rejects missing fields, whitespace names and malformed c
  const {signupDetailsError}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`)
  const good={fullName:'김회원',phoneNumber:'01012345678',signupSource:'Instagram'}
  assert.equal(signupDetailsError(good),'')
+ assert.equal(signupDetailsError({...good,signupSource:'기타',signupSourceOther:'학교 게시판'}),'')
+ assert.ok(signupDetailsError({...good,signupSource:'기타',signupSourceOther:' '}))
+ assert.ok(signupDetailsError({...good,signupSource:'기타',signupSourceOther:'x'.repeat(121)}))
  for(const invalid of [undefined,{...good,fullName:' '},{...good,fullName:'x\ny'},{...good,phoneNumber:''},{...good,phoneNumber:'123'},{...good,signupSource:''}]) assert.ok(signupDetailsError(invalid))
 })

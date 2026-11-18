@@ -9,7 +9,7 @@ import { AsyncButton, Icon, LoadingSkeleton } from '../../../shared/ui'
 import { ProjectCredit } from '../../../widgets/project-credit'
 import { InstallAppButton } from '../../../features/install-app'
 
-export function ProfilePage({ user, store, onSignOut, onAbout, onAdmin, profile, profileError, onProfileSaved, onRetry }: { user: User; store: LearningStore; onSignOut: () => Promise<unknown>; onAbout: () => void; onAdmin?: () => void; profile: AccountProfile | null; profileError: string; onProfileSaved: (profile: AccountProfile) => void; onRetry: () => void }) {
+export function ProfilePage({ user, store, onSignOut, onAbout, onAdmin, onSupport, profile, profileError, onProfileSaved, onRetry }: { user: User; store: LearningStore; onSignOut: () => Promise<unknown>; onAbout: () => void; onSupport: () => void; onAdmin?: () => void; profile: AccountProfile | null; profileError: string; onProfileSaved: (profile: AccountProfile) => void; onRetry: () => void }) {
   const loginId = profile?.username || displayLoginId(user)
   const [editing, setEditing] = useState(false)
   const [notice, setNotice] = useState('')
@@ -26,6 +26,7 @@ export function ProfilePage({ user, store, onSignOut, onAbout, onAdmin, profile,
         <article><Icon name="history" /><strong>{store.dictationSessions.length + store.flashcardSessions.length}</strong><span>완료한 학습</span></article>
         <article><Icon name="pen" /><strong>{store.activeQuizzes.length}</strong><span>진행 중인 학습</span></article>
       </section>
+      <button className="profile-admin-link" onClick={onSupport}><Icon name="message" /><span>문의하기</span><Icon name="chevron" /></button>
       {onAdmin && <button className="profile-admin-link" onClick={onAdmin}><Icon name="settings" /><span>관리자 페이지</span><Icon name="chevron" /></button>}
       <InstallAppButton />
       <section className="body-panel profile-services"><h2>몰입 스터디</h2>{BRAND_LINKS.map((link) => <a key={link.href} href={link.href} target="_blank" rel="noreferrer"><span>{link.label}</span><Icon name="arrow" /></a>)}</section>

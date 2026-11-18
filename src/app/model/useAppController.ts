@@ -331,7 +331,7 @@ export function useAppController() {
     if (user) returnTarget.current = null
     hasAppliedInitialRoute.current = true
     skipRouteSync.current = true
-    if (['not-found', 'forbidden', 'admin', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+    if (['not-found', 'forbidden', 'admin', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
@@ -365,7 +365,7 @@ export function useAppController() {
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
-      if (['not-found', 'forbidden', 'admin', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+      if (['not-found', 'forbidden', 'admin', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
@@ -477,6 +477,7 @@ export function useAppController() {
         full_name: details!.fullName.trim(),
         phone_number: normalizePhone(details!.phoneNumber),
         signup_source: details!.signupSource,
+        signup_source_detail: details!.signupSource === '기타' ? details!.signupSourceOther!.trim() : null,
       } },
     })
     if (result.error) {
@@ -1680,8 +1681,8 @@ export function useAppController() {
     })
   }
 
-  const navigateMain = async (nextScreen: 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
-    if (!user && (nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin('library'); return }
+  const navigateMain = async (nextScreen: 'support' | 'admin-support' | 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
+    if (!user && (nextScreen === 'support' || nextScreen === 'admin-support' || nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin(nextScreen === 'support' || nextScreen === 'admin-support' ? nextScreen : 'library'); return }
     if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
     if ((screen === 'flashcard' || screen === 'masking') && flashQueue.length && flashIndex < flashQueue.length) {
       await saveActiveFlashcard(flashcardState())

@@ -19,6 +19,7 @@ import { StudySettingsDialog } from '../features/learning-settings'
 import { AppShell } from '../widgets/navigation'
 import { AsyncButton, Icon, IconButton, LoadingSkeleton } from '../shared/ui'
 
+const SupportPage = lazy(() => import('../pages/support/ui/SupportPage').then(module => ({ default: module.SupportPage })))
 const AdminPage = lazy(() => import('../pages/admin/ui/AdminPage').then(module => ({ default: module.AdminPage })))
 const CommunityPage = lazy(() => import('../pages/community').then((module) => ({ default: module.CommunityPage })))
 const DictationPage = lazy(() => import('../pages/dictation').then((module) => ({ default: module.DictationPage })))
@@ -261,12 +262,15 @@ function App() {
   const errorPage = (code: 403 | 404 | 503, retry?: () => void) => shell(<ErrorPage code={code} onHome={() => void navigateMain('home')} onLogin={code === 403 && !user ? () => { setAuthMode('login'); setScreen('auth') } : undefined} onRetry={retry} />)
   if (screen === 'not-found') return errorPage(404)
   if (screen === 'forbidden') return errorPage(403)
-  if (screen === 'admin') {
+  if (screen === 'admin' || screen === 'admin-support') {
     if (admin.pending) return shell(<LoadingSkeleton view={adminMemberId ? 'admin-member' : 'admin'} />)
     if (admin.error) return errorPage(503, admin.refresh)
     if (!user || !admin.isAdmin) return errorPage(403)
-    return shell(<AdminPage key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
+    if (screen === 'admin-support') return shell(<SupportPage key={user.id} admin onAdminBack={() => void navigateMain('admin')} />)
+    return shell(<AdminPage onSupport={() => void navigateMain('admin-support')} key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
   }
+
+  if (screen === 'support') return shell(user ? <SupportPage key={user.id} /> : <section className="result-card"><h1>문의하기</h1><p>로그인하면 문의를 보내고 답변을 확인할 수 있어요.</p><button className="primary-btn" onClick={() => requestLogin('support')}>로그인하기</button></section>)
 
   if (screen === 'auth') {
     return shell(
@@ -291,7 +295,7 @@ function App() {
   }
 
   if (screen === 'profile') {
-    return shell(user ? <ProfilePage user={user} profile={account.profile} profileError={account.error} onRetry={account.refresh} onProfileSaved={profile => { account.accept(profile); refreshAccountIdentity(profile.username, profile.id) }} store={store} onSignOut={signOut} onAbout={() => void navigateMain('about')} onAdmin={admin.isAdmin ? () => void navigateMain('admin') : undefined} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
+    return shell(user ? <ProfilePage user={user} profile={account.profile} profileError={account.error} onRetry={account.refresh} onProfileSaved={profile => { account.accept(profile); refreshAccountIdentity(profile.username, profile.id) }} store={store} onSignOut={signOut} onSupport={() => void navigateMain('support')} onAbout={() => void navigateMain('about')} onAdmin={admin.isAdmin ? () => void navigateMain('admin') : undefined} /> : <section className="result-card"><p className="eyebrow">My account</p><h1>나만의 학습을 시작하세요</h1><p>로그인하면 스크립트와 학습 기록을 이어갈 수 있어요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setAuthMode('login'); setScreen('auth') }}>로그인</button><button onClick={() => { setAuthMode('signup'); setScreen('auth') }}>회원가입</button></div></section>)
   }
 
   if (screen === 'home' && user) return shell(<DashboardPage onMore={() => void navigateMain('continue')} store={store} onOpen={openScript} onResume={learning => learning.quizType === 'dictation' ? resumeDictation(learning) : resumeFlashcard(learning)} onCreate={() => openEditor()} onLibrary={() => void navigateMain('library')} onCommunity={() => void navigateMain('community')} onReview={id => { openScript(id); setStudyScope('weak'); setStudyError(''); setStudyModalOpen(true) }} />)

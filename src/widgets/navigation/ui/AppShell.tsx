@@ -7,7 +7,7 @@ import { AsyncButton, Icon } from '../../../shared/ui'
 import { ProjectCredit } from '../../project-credit'
 import { InstallAppButton } from '../../../features/install-app'
 
-type MainScreen = 'admin' | 'continue' | 'about' | 'auth' | 'home' | 'library' | 'community' | 'profile'
+type MainScreen = 'support' | 'admin-support' | 'admin' | 'continue' | 'about' | 'auth' | 'home' | 'library' | 'community' | 'profile'
 
 type AppShellProps = {
   isAdmin?: boolean
@@ -50,7 +50,8 @@ export function AppShell({
           <button className={screen === 'home' ? 'active' : ''} onClick={() => void onNavigate('home')}><Icon name="home" />홈</button>
           <button className={libraryActive ? 'active' : ''} onClick={() => void onNavigate('library')}><Icon name="book" />내 스크립트</button>
           <button className={(screen === 'community' || screen === 'publisher') ? 'active' : ''} onClick={onOpenCommunity}><Icon name="users" />커뮤니티</button>
-          {isAdmin && <button className={screen === 'admin' ? 'active' : ''} onClick={() => void onNavigate('admin')}><Icon name="settings" />관리자</button>}
+          <button className={screen === 'support' ? 'active' : ''} onClick={() => void onNavigate('support')}><Icon name="message" />문의하기</button>
+          {isAdmin && <button className={(screen === 'admin' || screen === 'admin-support') ? 'active' : ''} onClick={() => void onNavigate('admin')}><Icon name="settings" />관리자</button>}
         </nav>
         <InstallAppButton compact />
         <div className="sidebar-services">
@@ -64,7 +65,7 @@ export function AppShell({
           <ProjectCredit />
         </div>
         <div className="account-box">
-          {user ? <button className={`account-profile ${(screen === 'profile' || screen === 'admin') ? 'active' : ''}`} aria-current={(screen === 'profile' || screen === 'admin') ? 'page' : undefined} onClick={() => void onNavigate('profile')}>
+          {user ? <button className={`account-profile ${(screen === 'profile' || screen === 'support' || (screen === 'admin' || screen === 'admin-support')) ? 'active' : ''}`} aria-current={(screen === 'profile' || screen === 'support' || (screen === 'admin' || screen === 'admin-support')) ? 'page' : undefined} onClick={() => void onNavigate('profile')}>
             <span className="avatar">{loginId.slice(0, 1).toUpperCase()}</span>
             <span className="account-copy"><strong>{loginId}</strong><small>오늘도, 한 문장 더.</small></span>
             <Icon name="chevron" />
@@ -88,7 +89,7 @@ export function AppShell({
         <AsyncButton className={screen === 'home' ? 'active' : ''} onAction={() => onNavigate('home')}><Icon name="home" /><span>홈</span></AsyncButton>
         <AsyncButton className={libraryActive ? 'active' : ''} aria-current={libraryActive ? 'page' : undefined} onAction={() => onNavigate('library')}><Icon name="book" /><span>내 스크립트</span></AsyncButton>
         <AsyncButton className={(screen === 'community' || screen === 'publisher') ? 'active' : ''} aria-current={(screen === 'community' || screen === 'publisher') ? 'page' : undefined} onAction={() => onNavigate('community')}><Icon name="users" /><span>커뮤니티</span></AsyncButton>
-        <AsyncButton className={(screen === 'profile' || screen === 'admin') ? 'active' : ''} aria-current={(screen === 'profile' || screen === 'admin') ? 'page' : undefined} onAction={() => onNavigate('profile')}><Icon name="profile" /><span>내 정보</span></AsyncButton>
+        <AsyncButton className={(screen === 'profile' || screen === 'support' || (screen === 'admin' || screen === 'admin-support')) ? 'active' : ''} aria-current={(screen === 'profile' || screen === 'support' || (screen === 'admin' || screen === 'admin-support')) ? 'page' : undefined} onAction={() => onNavigate('profile')}><Icon name="profile" /><span>내 정보</span></AsyncButton>
       </nav>
     </div>
   )

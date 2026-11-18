@@ -10,7 +10,7 @@ type Counts = { visitors: number; pageviews: number }
 type Overview = { total_members: number; new_members_7d: number; new_members_24h: number }
 type Traffic = { recent?: Counts | null; pages?: (Counts & { path: string })[] | null; daily?: (Counts & { timestamp: string })[] | null; connected: boolean; message?: string; visitors?: number; pageviews?: number; since?: string; until?: string }
 
-export function AdminPage({ memberId, onSelectMember }: { memberId: string | null; onSelectMember: (id: string | null) => void }) {
+export function AdminPage({ memberId, onSelectMember, onSupport }: { onSupport: () => void; memberId: string | null; onSelectMember: (id: string | null) => void }) {
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState('')
   const [source, setSource] = useState('')
@@ -72,7 +72,7 @@ export function AdminPage({ memberId, onSelectMember }: { memberId: string | nul
   if (memberId) return <AdminMemberPage key={memberId} memberId={memberId} onBack={() => onSelectMember(null)} />
   return <section className="admin-page">
     <div className="page-top"><div><p className="eyebrow">Molip Study</p><h1>관리자</h1><p className="page-description">회원과 서비스 현황을 확인하세요.</p></div><button onClick={refresh}><Icon name="reset" />새로고침</button></div>
-    <nav className="admin-service-links" aria-label="서비스 관리 바로가기">{[['Vercel', 'https://vercel.com/z1hxn/molip-script'], ['GitHub', 'https://github.com/molipstudy/Molip-Script'], ['Supabase', 'https://supabase.com/dashboard/project/fdmcqpomrywuobbrmnyl']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer">{label}<Icon name="arrow" /></a>)}</nav>
+    <nav className="admin-service-links" aria-label="서비스 관리 바로가기"><button onClick={onSupport}><Icon name="message" />문의함</button>{[['Vercel', 'https://vercel.com/z1hxn/molip-script'], ['GitHub', 'https://github.com/molipstudy/Molip-Script'], ['Supabase', 'https://supabase.com/dashboard/project/fdmcqpomrywuobbrmnyl']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer">{label}<Icon name="arrow" /></a>)}</nav>
     <div className="admin-overview">
       <article><span>전체 회원</span><strong>{overview ? number(overview.total_members) : list ? number(list.total_members) : loading ? <SkeletonValue /> : '—'}</strong></article>
       <article><span>최근 7일 신규 가입</span><strong>{overview ? number(overview.new_members_7d) : !overviewError ? <SkeletonValue /> : '—'}</strong><small>{overview ? `최근 24시간 ${number(overview.new_members_24h)}명` : overviewError ? '가입 통계를 불러오지 못했어요' : '확인 중…'}</small></article>
@@ -91,12 +91,12 @@ export function AdminPage({ memberId, onSelectMember }: { memberId: string | nul
         <h2 id="admin-members-title">회원 목록 {list && <span className="count-badge">{number(list.total)}</span>}</h2>
         <form className="admin-filters" onSubmit={event => { event.preventDefault(); updateFilters(); setPage(0); setSearch(query.trim()); setRevision(value => value + 1) }}>
           <label className="field"><span>회원 검색</span><input value={query} maxLength={200} onChange={event => setQuery(event.target.value)} placeholder="유저네임, 이메일 또는 UUID" /></label>
-          <label className="field"><span>가입 경로</span><select value={source} onChange={event => { updateFilters(); setPage(0); setSource(event.target.value) }}><option value="">전체</option>{['지인 홍보','커뮤니티','Instagram','미선택'].map(value => <option key={value}>{value}</option>)}</select></label>
+          <label className="field"><span>가입 경로</span><select value={source} onChange={event => { updateFilters(); setPage(0); setSource(event.target.value) }}><option value="">전체</option>{['지인 홍보','커뮤니티','Instagram','기타','미선택'].map(value => <option key={value}>{value}</option>)}</select></label>
           <button className="primary-btn" type="submit">검색</button>
         </form>
         {loading ? <LoadingSkeleton view="member-list" compact /> : error ? <p role="alert" className="error-text">{error}</p> : !list?.items.length ? <p className="admin-empty">조건에 맞는 회원이 없습니다.</p> : <div className="admin-member-list">{list.items.map(member => <button key={member.id} className="admin-member" onClick={() => onSelectMember(member.id)}>
           <span className="admin-member-identity"><strong>{member.username || '프로필 미등록'}</strong><span>{member.email || '이메일 없음'}</span><small>{date(member.created_at)}</small></span>
-          <span className="admin-member-source">{member.signup_source}<Icon name="chevron" /></span>
+          <span className="admin-member-source">{member.signup_source}{member.signup_source_detail ? ` · ${member.signup_source_detail}` : ''}<Icon name="chevron" /></span>
         </button>)}</div>}
         <div className="admin-pagination"><button disabled={loading || page === 0} onClick={() => { updateFilters(); setPage(value => value - 1) }}>이전</button><span>{page + 1} / {Math.max(1, Math.ceil((list?.total ?? 0) / 25))}</span><button disabled={loading || !list || (page + 1) * 25 >= list.total} onClick={() => { updateFilters(); setPage(value => value + 1) }}>다음</button></div>
       </section>

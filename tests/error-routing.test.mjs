@@ -36,3 +36,11 @@ test('admin member details have a strict UUID route and round trip', () => {
  assert.equal(pathForScreen('admin', null, null, null, null, id), `/admin/members/${id}`)
  for (const path of ['/admin/members', '/admin/members/no-id', `/admin/members/${id}/edit`]) assert.equal(parseAppPath(path).screen, 'not-found')
 })
+
+test('support and administrator inbox have distinct routes',()=>{
+ assert.equal(parseAppPath('/support').screen,'support')
+ assert.equal(parseAppPath('/admin/support').screen,'admin-support')
+ assert.equal(parseAppPath('/admin/support/extra').screen,'not-found')
+ assert.equal(pathForScreen('support',null),'/support')
+ assert.equal(pathForScreen('admin-support',null),'/admin/support')
+})
