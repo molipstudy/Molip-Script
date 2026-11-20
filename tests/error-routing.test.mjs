@@ -32,9 +32,9 @@ test('SPA rewrite preserves all API paths for real HTTP error responses',async()
 
 test('admin member details have a strict UUID route and round trip', () => {
  const id = 'ffe7a16b-36eb-4c3a-94b5-60a59ce079c3'
- assert.deepEqual(parseAppPath(`/admin/members/${id}`), {scriptId:null,screen:'admin',adminMemberId:id})
+ assert.deepEqual(parseAppPath(`/admin/members/${id}`), {scriptId:null,screen:'admin-members',adminMemberId:id})
  assert.equal(pathForScreen('admin', null, null, null, null, id), `/admin/members/${id}`)
- for (const path of ['/admin/members', '/admin/members/no-id', `/admin/members/${id}/edit`]) assert.equal(parseAppPath(path).screen, 'not-found')
+ for (const path of ['/admin/members/no-id', `/admin/members/${id}/edit`]) assert.equal(parseAppPath(path).screen, 'not-found')
 })
 
 test('support and administrator inbox have distinct routes',()=>{
@@ -43,4 +43,15 @@ test('support and administrator inbox have distinct routes',()=>{
  assert.equal(parseAppPath('/admin/support/extra').screen,'not-found')
  assert.equal(pathForScreen('support',null),'/support')
  assert.equal(pathForScreen('admin-support',null),'/admin/support')
+})
+
+test('admin hub, analytics and member list have separate routes while member detail links remain stable',()=>{
+ assert.equal(parseAppPath('/admin').screen,'admin')
+ assert.equal(parseAppPath('/admin/analytics').screen,'admin-analytics')
+ assert.equal(parseAppPath('/admin/members').screen,'admin-members')
+ assert.equal(pathForScreen('admin-analytics',null),'/admin/analytics')
+ assert.equal(pathForScreen('admin-members',null),'/admin/members')
+ const id='ffe7a16b-36eb-4c3a-94b5-60a59ce079c3'
+ assert.equal(pathForScreen('admin-members',null,null,null,null,id),`/admin/members/${id}`)
+ assert.equal(parseAppPath('/admin/analytics/extra').screen,'not-found')
 })

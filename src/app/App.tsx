@@ -20,6 +20,7 @@ import { AppShell } from '../widgets/navigation'
 import { AsyncButton, Icon, IconButton, LoadingSkeleton } from '../shared/ui'
 
 const SupportPage = lazy(() => import('../pages/support/ui/SupportPage').then(module => ({ default: module.SupportPage })))
+const AdminScriptPage = lazy(() => import('../pages/admin/ui/AdminScriptPage').then(module => ({ default: module.AdminScriptPage })))
 const AdminPage = lazy(() => import('../pages/admin/ui/AdminPage').then(module => ({ default: module.AdminPage })))
 const CommunityPage = lazy(() => import('../pages/community').then((module) => ({ default: module.CommunityPage })))
 const DictationPage = lazy(() => import('../pages/dictation').then((module) => ({ default: module.DictationPage })))
@@ -108,7 +109,7 @@ function App() {
     gradesByIndex,
     dictationIndex,
     registerDictationInput,
-    selectedScript,
+    selectedScript, selectedScriptId, copyScript,
     selectedScriptSessions,
     selectedFlashcardSessions,
     selectedResultSession,
@@ -195,6 +196,7 @@ function App() {
         <h1 title={screen === 'script' ? undefined : selectedScript.title}>{screen === 'script' ? '스크립트 상세' : selectedScript.title}</h1>
       </div>
       <div className="mobile-page-actions">
+        {screen === 'script' && user && selectedScript.id !== TRIAL_ID && <AsyncButton className="icon-btn" aria-label="스크립트 복사" title="스크립트 복사" onAction={() => copyScript(selectedScript.id)}><Icon name="copy" /></AsyncButton>}
         {screen === 'script' && selectedScript.id !== TRIAL_ID && <IconButton icon="edit" label="스크립트 수정" onClick={() => openEditor(selectedScript)} />}
         {screen !== 'script' && <IconButton icon="settings" label="학습 설정" onClick={openStudySettings} />}
         {screen !== 'script' && (
@@ -252,7 +254,7 @@ function App() {
     >
       {screen === 'home' && user && <InstallAppBanner />}
       {user && missingProfile.length > 0 && dismissedProfileUser !== user.id && !['auth', 'profile', 'flashcard', 'dictation', 'masking', 'result'].includes(screen) && <aside className="profile-completion-notice" aria-label="회원 정보 입력 안내"><div><strong>회원 정보 확인이 필요해요</strong><p>{missingProfile.join('·')} 정보를 추가해 주세요. 계정을 더 편리하게 이용할 수 있어요.</p></div><div className="button-row"><button className="primary-btn" onClick={() => void navigateMain('profile')}>회원 정보 입력하기</button><button className="text-btn" onClick={() => setDismissedProfileUser(user.id)}>나중에</button></div></aside>}
-      <Suspense fallback={<LoadingSkeleton view={screen === 'admin' && adminMemberId ? 'admin-member' : screen === 'community' && selectedCommunityId ? 'script' : screen} />}>{content}</Suspense>
+      <Suspense fallback={<LoadingSkeleton view={screen === 'admin-members' && adminMemberId ? 'admin-member' : screen === 'community' && selectedCommunityId ? 'script' : screen} />}>{content}</Suspense>
       {['script', 'flashcard', 'masking', 'dictation'].includes(screen) && selectedScript?.id === TRIAL_ID && <p className="trial-notice">체험 모드 · 학습 기록은 저장되지 않습니다.</p>}
       {screen !== 'home' && screen !== 'about' && <Guide key={screen} screen={screen} />}
       {loginRequired && <div className="login-overlay" role="dialog" aria-modal="true" aria-label="로그인 안내"><section className="result-card"><h2>로그인이 필요한 기능이에요</h2><p>내 스크립트와 개인 학습 기록을 계정에 안전하게 보관하세요.</p><div className="button-row"><button className="primary-btn" onClick={() => { setLoginRequired(false); setScreen('auth') }}>로그인하기</button><button onClick={() => setLoginRequired(false)}>계속 둘러보기</button></div></section></div>}
@@ -262,12 +264,11 @@ function App() {
   const errorPage = (code: 403 | 404 | 503, retry?: () => void) => shell(<ErrorPage code={code} onHome={() => void navigateMain('home')} onLogin={code === 403 && !user ? () => { setAuthMode('login'); setScreen('auth') } : undefined} onRetry={retry} />)
   if (screen === 'not-found') return errorPage(404)
   if (screen === 'forbidden') return errorPage(403)
-  if (screen === 'admin' || screen === 'admin-support') {
-    if (admin.pending) return shell(<LoadingSkeleton view={adminMemberId ? 'admin-member' : 'admin'} />)
+  if (screen === 'admin' || screen === 'admin-support' || screen === 'admin-analytics' || screen === 'admin-members') {
+    if (admin.pending) return shell(<LoadingSkeleton view={adminMemberId ? 'admin-member' : screen} />)
     if (admin.error) return errorPage(503, admin.refresh)
     if (!user || !admin.isAdmin) return errorPage(403)
-    if (screen === 'admin-support') return shell(<SupportPage key={user.id} admin onAdminBack={() => void navigateMain('admin')} />)
-    return shell(<AdminPage onSupport={() => void navigateMain('admin-support')} key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
+    return shell(<AdminPage section={screen === 'admin-analytics' ? 'analytics' : screen === 'admin-members' ? 'members' : screen === 'admin-support' ? 'support' : 'dashboard'} onNavigate={section => void navigateMain(section === 'dashboard' ? 'admin' : section === 'analytics' ? 'admin-analytics' : section === 'members' ? 'admin-members' : 'admin-support')} key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
   }
 
   if (screen === 'support') return shell(user ? <SupportPage key={user.id} /> : <section className="result-card"><h1>문의하기</h1><p>로그인하면 문의를 보내고 답변을 확인할 수 있어요.</p><button className="primary-btn" onClick={() => requestLogin('support')}>로그인하기</button></section>)
@@ -364,10 +365,18 @@ function App() {
     )
   }
 
+  if (screen === 'script' && !selectedScript && selectedScriptId && user) {
+    if (admin.pending) return shell(<LoadingSkeleton view="script" />)
+    if (admin.error) return errorPage(503, admin.refresh)
+    if (!admin.isAdmin) return errorPage(404)
+    return shell(<AdminScriptPage key={`${user.id}:${selectedScriptId}`} scriptId={selectedScriptId} onCopy={copyScript} onBack={ownerId => { setAdminMemberId(ownerId || null); setScreen('admin-members') }} />)
+  }
+
   if (screen === 'script' && selectedScript) {
     return shell(
       <ScriptPage
         script={selectedScript}
+        onCopy={user && selectedScript.id !== TRIAL_ID ? () => copyScript(selectedScript.id) : undefined}
         items={selectedItems}
         stats={selectedStats}
         wordStats={selectedWordStats}

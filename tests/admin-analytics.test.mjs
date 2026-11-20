@@ -33,16 +33,20 @@ test('authorized administrator receives only real numeric totals for the fixed p
     assert.ok([86400000,7*86400000].includes(Date.parse(url.searchParams.get('until'))-Date.parse(url.searchParams.get('since'))))
     assert.equal(options.headers.Authorization,'Bearer server-secret')
     const by = url.searchParams.get('by')
-    assert.ok(by === null || ['requestPath', 'day'].includes(by))
+    assert.ok(by === null || ['requestPath','day','hour','route','referrerHostname','country','deviceType','browserName','osName','utmSource','utmMedium','utmCampaign','utmContent','utmTerm'].includes(by))
     if (by === 'requestPath') return reply({data:[{requestPath:'/community?token=private',visitors:3,pageviews:8,secret:'not-forwarded'}]})
     if (by === 'day') return reply({data:[{timestamp:'2026-11-13T00:00:00Z',visitors:4,pageviews:9,secret:'not-forwarded'}]})
+    if (by === 'hour') return reply({data:[{timestamp:'2026-11-13T08:00:00Z',visitors:4,pageviews:9}]})
+    if (by) return reply({data:[{[by]:'Sample',visitors:3,pageviews:8,secret:'not-forwarded'}]})
     return reply({data:{visitors:13,pageviews:22,secret:'not-forwarded'}})
   }})
   assert.equal(res.code,200)
   assert.equal(res.body.visitors,13)
   assert.equal(res.body.pageviews,22)
   assert.ok(!JSON.stringify(res.body).includes('secret'))
-  assert.equal(calls,5)
+  assert.equal(calls,18)
+  assert.equal(res.body.breakdowns.country[0].label,'Sample')
+  assert.equal(res.body.hourly[0].visitors,4)
   assert.deepEqual(res.body.pages,[{path:'/community',visitors:3,pageviews:8}])
   assert.equal(res.body.daily[0].visitors,4)
   assert.equal(res.body.recent.visitors,13)
@@ -78,4 +82,30 @@ test('optional aggregate failures preserve totals without manufacturing empty da
  assert.equal(res.body.visitors,2)
  assert.equal(res.body.pages,null)
  assert.equal(res.body.daily,null)
+})
+
+test('dashboard mode uses only totals, recent count and trend, and arbitrary ranges are rejected', async () => {
+ let calls=0
+ const fetcher=async url=>{calls++;if(String(url).startsWith(env.SUPABASE_URL))return reply(true);return reply({data:url.searchParams.get('by')?[{timestamp:'2026-11-14T00:00:00Z',visitors:1,pageviews:2}]:{visitors:1,pageviews:2}})}
+ const res=response()
+ await handleAnalytics({...request(),query:{summary:'1',days:'30'}},res,{env,fetcher})
+ assert.equal(res.code,200);assert.equal(calls,4);assert.equal(res.body.daily.length,1);assert.equal(res.body.days,30)
+ const invalid=response()
+ await handleAnalytics({...request(),query:{days:'999'}},invalid,{env,fetcher})
+ assert.equal(invalid.code,400);assert.equal(calls,5)
+})
+test('expanded requests have bounded concurrency and retain available breakdowns when another fails', async () => {
+ let active=0,max=0
+ const res=response()
+ await handleAnalytics(request(),res,{env,fetcher:async url=>{
+  if(String(url).startsWith(env.SUPABASE_URL))return reply(true)
+  active++;max=Math.max(max,active)
+  await new Promise(resolve=>setTimeout(resolve,1));active--
+  const by=url.searchParams.get('by')
+  if(by==='country')return reply({},403)
+  if(by==='day')return reply({data:[{timestamp:'bad',visitors:3,pageviews:5},{timestamp:'2026-11-14T00:00:00Z',visitors:2,pageviews:5}]})
+  return reply({data:by?[{[by]:'value',visitors:2,pageviews:5}]:{visitors:2,pageviews:5}})
+ }})
+ assert.equal(max,5);assert.equal(res.body.breakdowns.country,null);assert.equal(res.body.unavailable.country,403)
+ assert.equal(res.body.breakdowns.browserName[0].pageviews,5);assert.equal(res.body.daily.length,1)
 })

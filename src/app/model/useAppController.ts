@@ -331,7 +331,7 @@ export function useAppController() {
     if (user) returnTarget.current = null
     hasAppliedInitialRoute.current = true
     skipRouteSync.current = true
-    if (['not-found', 'forbidden', 'admin', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+    if (['not-found', 'forbidden', 'admin', 'admin-analytics', 'admin-members', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
@@ -345,7 +345,7 @@ export function useAppController() {
     if (!target.scriptId) return
     if (!user && target.scriptId !== TRIAL_ID) { setScreen('not-found'); return }
     if (!user && ['history', 'result', 'editor'].includes(target.screen)) { setScreen('forbidden'); return }
-    if (target.scriptId !== TRIAL_ID && !store.scripts.some((script) => script.id === target.scriptId)) { setScreen('not-found'); return }
+    if (target.scriptId !== TRIAL_ID && !store.scripts.some((script) => script.id === target.scriptId) && !(user && target.screen === 'script')) { setScreen('not-found'); return }
     if (target.screen === 'masking') setStudyKind('masking')
     setSelectedScriptId(target.scriptId)
     setSelectedSessionId(target.sessionId ?? null)
@@ -365,7 +365,7 @@ export function useAppController() {
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
-      if (['not-found', 'forbidden', 'admin', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+      if (['not-found', 'forbidden', 'admin', 'admin-analytics', 'admin-members', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
@@ -386,7 +386,7 @@ export function useAppController() {
       }
       if (!user && target.scriptId !== TRIAL_ID) { setScreen('not-found'); return }
       if (!user && ['history', 'result'].includes(target.screen)) { setScreen('forbidden'); return }
-      if (target.scriptId !== TRIAL_ID && !store.scripts.some(script => script.id === target.scriptId)) { setScreen('not-found'); return }
+      if (target.scriptId !== TRIAL_ID && !store.scripts.some(script => script.id === target.scriptId) && !(user && target.screen === 'script')) { setScreen('not-found'); return }
       if (target.screen === 'masking') setStudyKind('masking')
       setSelectedScriptId(target.scriptId)
       setSelectedSessionId(target.sessionId ?? null)
@@ -721,6 +721,17 @@ export function useAppController() {
       setCommunityNotice('커뮤니티 공유를 취소했습니다. 내 스크립트는 그대로 유지됩니다.')
     }
     setCommunityBusy(false)
+  }
+
+  const copyScript = async (scriptId: string) => {
+    if (!supabase || !user) return
+    try {
+      const result = await supabase.rpc('copy_script', { p_script_id: scriptId })
+      if (result.error || !result.data) throw new Error('Copy failed')
+      const row = result.data as ScriptRow
+      setStore(previous => ({ ...previous, scripts: [{ id: row.id, title: row.title, rawText: row.raw_text, excludedWords: row.excluded_words || [], createdAt: row.created_at, updatedAt: row.updated_at, lastOpenedAt: row.last_opened_at }, ...previous.scripts] }))
+      openScript(row.id)
+    } catch { setSyncError('스크립트를 복사하지 못했어요. 잠시 후 다시 시도해 주세요.') }
   }
 
   const copyCommunityScript = async (shared: CommunityScript) => {
@@ -1681,13 +1692,13 @@ export function useAppController() {
     })
   }
 
-  const navigateMain = async (nextScreen: 'support' | 'admin-support' | 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
-    if (!user && (nextScreen === 'support' || nextScreen === 'admin-support' || nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin(nextScreen === 'support' || nextScreen === 'admin-support' ? nextScreen : 'library'); return }
+  const navigateMain = async (nextScreen: 'admin-analytics' | 'admin-members' | 'support' | 'admin-support' | 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
+    if (!user && (nextScreen === 'support' || nextScreen === 'admin-support' || nextScreen === 'admin-analytics' || nextScreen === 'admin-members' || nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin(nextScreen === 'support' || nextScreen === 'admin-support' ? nextScreen : 'library'); return }
     if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
     if ((screen === 'flashcard' || screen === 'masking') && flashQueue.length && flashIndex < flashQueue.length) {
       await saveActiveFlashcard(flashcardState())
     }
-    if (nextScreen === 'admin') setAdminMemberId(null)
+    if (nextScreen.startsWith('admin')) setAdminMemberId(null)
     if (nextScreen === 'community') { setSelectedCommunityId(null); setCommunityNotice('') }
     setScreen(nextScreen)
   }
@@ -1889,7 +1900,7 @@ export function useAppController() {
     deleteScript,
     shareScript,
     unshareScript,
-    copyCommunityScript,
+    copyCommunityScript, copyScript, selectedScriptId,
     modeForScope,
     startFlashcard,
     startDictation,

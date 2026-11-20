@@ -6,6 +6,8 @@ import { formatDateTime, studyModeLabel } from '../../../shared/lib'
 import { AsyncButton, Icon, IconButton, StudyTip } from '../../../shared/ui'
 
 type ScriptPageProps = {
+  adminPreview?: boolean
+  onCopy?: () => Promise<unknown>
   script: ScriptRecord
   items: QuizItem[]
   stats: Record<string, SentenceStat>
@@ -26,17 +28,20 @@ type ScriptPageProps = {
 export function ScriptPage({
   script, items, stats, wordStats, historyCount, activeLearnings, showMeaning,
   onBack, onEdit, onOpenHistory, onOpenStudy, onShowMeaningChange, onResume,
-  onDeleteActive, onToggleStar,
+  onDeleteActive, onToggleStar, adminPreview = false, onCopy,
 }: ScriptPageProps) {
   const weakWords = new Set(wordStats.filter((stat) => stat.wrongCount > 0).map((stat) => stat.word))
   return (
     <section className="script-detail-page">
+      {adminPreview && <aside className="admin-preview-notice" role="status"><Icon name="eye" /><div><strong>관리자 열람 중</strong><p>관리자 권한으로 다른 회원의 스크립트를 보고 있어요. 복사한 뒤 내 계정에서 학습할 수 있어요.</p></div></aside>}
       <div className="script-hero">
-        <div><button className="text-btn mobile-relocated" onClick={onBack}><Icon name="back" />내 스크립트</button><h1 className="script-detail-title">{script.title}</h1><p>문장 {items.length}개 · 최근 열람 {formatDateTime(script.lastOpenedAt)}</p></div>
+        <div><button className={`text-btn ${adminPreview ? '' : 'mobile-relocated'}`} onClick={onBack}><Icon name="back" />{adminPreview ? '회원 관리' : '내 스크립트'}</button><h1 className="script-detail-title">{script.title}</h1><p>문장 {items.length}개 · {adminPreview ? '최근 수정' : '최근 열람'} {formatDateTime(adminPreview ? script.updatedAt : script.lastOpenedAt)}</p></div>
         <div className="script-actions">
+          {adminPreview ? <AsyncButton className="primary-btn" onAction={() => onCopy?.() || Promise.resolve()}><Icon name="copy" />내 계정으로 복사</AsyncButton> : <>
+          {onCopy && <AsyncButton className="icon-btn mobile-relocated" aria-label="스크립트 복사" title="스크립트 복사" onAction={onCopy}><Icon name="copy" /></AsyncButton>}
           <IconButton className="mobile-relocated" icon="edit" label="스크립트 수정" onClick={onEdit} />
           <button onClick={onOpenHistory}><Icon name="history" />학습 내역 <span className="count-badge">{historyCount}</span></button>
-          <button className="primary-btn jumbo-btn" onClick={onOpenStudy}><Icon name="play" />학습하기</button>
+          <button className="primary-btn jumbo-btn" onClick={onOpenStudy}><Icon name="play" />학습하기</button></> }
         </div>
       </div>
 
@@ -64,7 +69,7 @@ export function ScriptPage({
         </section>
       )}
 
-      <StudyTip context="script" />
+      {!adminPreview && <StudyTip context="script" />}
       <section className="body-panel">
         <div className="panel-top"><h2><Icon name="book" />스크립트 본문 <span className="count-badge">{items.length}</span></h2><button className={`reading-toggle ${showMeaning ? 'active' : ''}`} aria-pressed={showMeaning} onClick={() => onShowMeaningChange(!showMeaning)}><Icon name="eye" />해석</button></div>
         <div className="script-body">
@@ -73,7 +78,7 @@ export function ScriptPage({
             const isWeak = Boolean(stat) && (stat.dictationWrongCount > 0 || stat.flashcardUnknownCount > 0 || (stat.maskingWrongCount ?? 0) > 0)
             return (
               <article className={`${isWeak ? 'weak-sentence' : ''} ${stat?.starred ? 'starred-sentence' : ''}`} key={`${item.number}-${item.english}`}>
-                <IconButton className={`star-button ${stat?.starred ? 'active' : ''}`} icon="star" label={stat?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(stat?.starred)} onClick={() => void onToggleStar(item, index)} />
+                {!adminPreview && <IconButton className={`star-button ${stat?.starred ? 'active' : ''}`} icon="star" label={stat?.starred ? '별표 해제' : '별표 표시'} aria-pressed={Boolean(stat?.starred)} onClick={() => void onToggleStar(item, index)} />}
                 <span className="sentence-number">{String(index + 1).padStart(2, '0')}</span>
                 {showMeaning && <p>{item.meaning}{isWeak && <span className="weak-badge">취약</span>}</p>}
                 <strong><HighlightedSentence english={item.english} weakWords={weakWords} /></strong>

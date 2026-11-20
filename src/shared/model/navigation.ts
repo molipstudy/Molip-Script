@@ -2,6 +2,8 @@ export type Screen =
   | 'not-found'
   | 'forbidden'
   | 'support'
+  | 'admin-analytics'
+  | 'admin-members'
   | 'admin-support'
   | 'admin'
   | 'home'

@@ -9,8 +9,10 @@ export const parseAppPath = (pathname: string): RouteTarget => {
   if (parts.some(part => part.includes('/') || part.includes('\\') || Array.from(part).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))) return missing
   const [scriptId = '', mode = '', id = ''] = parts
   if (!parts.length) return { scriptId: null, screen: 'home' }
+  if (scriptId === 'admin' && mode === 'analytics' && parts.length === 2) return { scriptId: null, screen: 'admin-analytics' }
+  if (scriptId === 'admin' && mode === 'members' && parts.length === 2) return { scriptId: null, screen: 'admin-members' }
   if (scriptId === 'admin' && mode === 'support' && parts.length === 2) return { scriptId: null, screen: 'admin-support' }
-  if (scriptId === 'admin' && mode === 'members' && parts.length === 3 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return { scriptId: null, screen: 'admin', adminMemberId: id }
+  if (scriptId === 'admin' && mode === 'members' && parts.length === 3 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return { scriptId: null, screen: 'admin-members', adminMemberId: id }
   const staticScreens: Record<string, Screen> = { support: 'support', admin: 'admin', continue: 'continue', about: 'about',
     library: 'library', auth: 'auth', profile: 'profile', '404': 'not-found', '403': 'forbidden' }
   if (Object.hasOwn(staticScreens, scriptId)) return parts.length === 1 ? { scriptId: null, screen: staticScreens[scriptId] } : missing
@@ -33,6 +35,8 @@ export const pathForScreen = (
   adminMemberId?: string | null,
 ) => {
   if (screen === 'support') return '/support'
+  if (screen === 'admin-analytics') return '/admin/analytics'
+  if (screen === 'admin-members') return adminMemberId ? `/admin/members/${encodeURIComponent(adminMemberId)}` : '/admin/members'
   if (screen === 'admin-support') return '/admin/support'
   if (screen === 'not-found') return '/404'
   if (screen === 'forbidden') return '/403'

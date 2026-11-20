@@ -16,7 +16,7 @@ const Study = ({ view }: { view: string }) => <><Block shape="progress" /><div c
 const labels: Record<string, string> = {
   support: '문의 목록', 'admin-support': '문의함', 'support-detail': '문의 대화', home: '학습 홈', about: '서비스 소개', library: '내 스크립트', continue: '학습 이어하기',
   auth: '로그인', profile: '내 정보', 'profile-fields': '회원 정보', publisher: '게시자 프로필',
-  admin: '관리자 현황', 'admin-member': '회원 상세', 'member-list': '회원 목록', 'analytics-table': '방문 통계',
+  'admin-analytics': '방문 통계', 'admin-members': '회원 관리', admin: '관리자 대시보드', 'admin-member': '회원 상세', 'member-list': '회원 목록', 'analytics-table': '방문 통계',
   community: '커뮤니티', 'landing-community': '공개 스크립트', script: '스크립트 본문',
   history: '학습 내역', result: '학습 결과', editor: '스크립트 편집',
   flashcard: '플래시카드', dictation: '받아쓰기', masking: '마스킹 학습',
@@ -34,7 +34,9 @@ function Content({ view, compact }: { view: string; compact: boolean }) {
   if (view === 'publisher') return <><div className="skeleton-panel sk-profile-identity"><Block shape="avatar" /><div><Block shape="title" /><Block shape="description" /></div><Block shape="button" /></div><Community /></>
   if (view === 'profile') return <><div className="skeleton-panel sk-profile-identity"><Block shape="avatar" /><div><Block shape="title" /><Block shape="description" /></div></div><div className="skeleton-panel sk-body"><Block shape="title" /><Fields count={3} /></div><Stats /></>
   if (view === 'admin-member') return <div className="skeleton-panel sk-body"><Block shape="title" /><Fields count={9} /><Stats /></div>
-  if (view === 'admin') return <><div className="sk-service-links"><Block shape="button" /><Block shape="button" /><Block shape="button" /></div><Stats count={6} /><div className="sk-analytics-grid">{repeat(2, () => <div className="skeleton-panel sk-body"><Block shape="title" /><Table /></div>)}</div><div className="skeleton-panel sk-body"><Block shape="title" /><Toolbar /><MemberList /></div></>
+  if (view === 'admin') return <LearningCards />
+  if (view === 'admin-members') return <><Toolbar /><MemberList /></>
+  if (view === 'admin-analytics') return <><div className="sk-service-links"><Block shape="button" /><Block shape="button" /><Block shape="button" /></div><Stats count={6} /><div className="sk-analytics-grid">{repeat(2, () => <div className="skeleton-panel sk-body"><Block shape="title" /><Table /></div>)}</div></>
   if (view === 'auth') return <div className="skeleton-panel sk-auth"><Block shape="avatar" /><Block shape="title" /><Block shape="description" /><Block shape="input" /><div className="sk-fields">{repeat(2, () => <><Block shape="label" /><Block shape="input" /></>)}</div><Block shape="input" /></div>
   if (view === 'editor') return <div className="skeleton-panel sk-body"><Block shape="label" /><Block shape="input" /><div className="sk-service-links"><Block shape="button" /><Block shape="button" /></div><Block shape="textarea" /></div>
   if (view === 'result') return <><div className="skeleton-panel sk-result"><Block shape="score" /><Block shape="title" /><Block shape="description" /></div><Stats /><Rows count={3} /></>

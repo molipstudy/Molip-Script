@@ -77,3 +77,16 @@ test('page skeletons expose one loading announcement while decorative shapes sta
     assert.ok(!/<(button|input|select|a)[ >]/.test(html))
   }
 })
+
+test('administrator script view is read only and own script copy precedes the edit action',async()=>{
+ const highlight=await moduleUrl('../src/entities/script/ui/HighlightedSentence.tsx',[["'../lib/script-text'",JSON.stringify(text)]])
+ const entity=`data:text/javascript;base64,${Buffer.from(`export * from ${JSON.stringify(text)};export * from ${JSON.stringify(highlight)}`).toString('base64')}`
+ const {ScriptPage}=await import(await moduleUrl('../src/pages/script/ui/ScriptPage.tsx',[["'../../../entities/script'",JSON.stringify(entity)],["'../../../shared/lib'",JSON.stringify(lib)],["'../../../shared/ui'",JSON.stringify(ui)]]))
+ const props={script:{id:'test',title:'본문',rawText:'1. 뜻\nEnglish.',excludedWords:[],createdAt:'2026-11-20',updatedAt:'2026-11-20',lastOpenedAt:'2026-11-20'},items:[{number:'1',meaning:'뜻',english:'English.'}],stats:{},wordStats:[],historyCount:0,activeLearnings:[],showMeaning:true,onBack:noop,onEdit:noop,onOpenHistory:noop,onOpenStudy:noop,onShowMeaningChange:noop,onResume:noop,onDeleteActive:async()=>{},onToggleStar:async()=>{},onCopy:async()=>{}}
+ const preview=renderToStaticMarkup(createElement(ScriptPage,{...props,adminPreview:true}))
+ assert.ok(preview.includes('관리자 열람 중'));assert.ok(preview.includes('내 계정으로 복사'));assert.ok(preview.includes('English.'))
+ assert.ok(!preview.includes('스크립트 수정'));assert.ok(!preview.includes('학습하기'));assert.ok(!preview.includes('별표 표시'))
+ const own=renderToStaticMarkup(createElement(ScriptPage,props))
+ assert.ok(own.indexOf('aria-label="스크립트 복사"')<own.indexOf('aria-label="스크립트 수정"'))
+ assert.ok(own.includes('학습하기'))
+})
