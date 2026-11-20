@@ -90,3 +90,17 @@ test('administrator script view is read only and own script copy precedes the ed
  assert.ok(own.indexOf('aria-label="스크립트 복사"')<own.indexOf('aria-label="스크립트 수정"'))
  assert.ok(own.includes('학습하기'))
 })
+
+const memberModel = await moduleUrl('../src/pages/admin/model/member.ts')
+const nullApi = `data:text/javascript;base64,${Buffer.from('export const supabase = null').toString('base64')}`
+const { DevelopmentContent } = await import(await moduleUrl('../src/pages/admin/ui/AdminDevelopmentPage.tsx', [["'../../../shared/api'", JSON.stringify(nullApi)], ["'../../../shared/ui'", JSON.stringify(ui)], ["'../model/member'", JSON.stringify(memberModel)]]))
+test('deployment view separates current production, newer failed attempts and unavailable providers',()=>{
+ const sha='a'.repeat(40),newSha='b'.repeat(40)
+ const deployment={id:'current',state:'READY',createdAt:'2026-11-20T00:00:00Z',commit:{sha,message:'Live production',url:`https://github.com/molipstudy/Molip-Script/commit/${sha}`},url:'https://vercel.com/z1hxn/molip-script'}
+ const data={checkedAt:'2026-11-20T00:00:00Z',vercel:{configured:true,currentAvailable:true,latestAvailable:true,current:deployment,latest:{...deployment,id:'new',state:'ERROR'}},github:{available:true,commits:[{sha:newSha,message:'<script>unsafe</script>',author:'Author',createdAt:'2026-11-20T00:00:00Z',url:`https://github.com/molipstudy/Molip-Script/commit/${newSha}`} ]}}
+ const markup=renderToStaticMarkup(createElement(DevelopmentContent,{data}))
+ assert.ok(markup.includes('현재 운영 배포'));assert.ok(markup.includes('배포 완료'));assert.ok(markup.includes('최근 배포 시도'));assert.ok(markup.includes('배포 실패'))
+ assert.ok(markup.includes('최신 main 커밋과 운영 배포의 커밋이 달라요'));assert.ok(!markup.includes('<script>'));assert.ok(markup.includes('&lt;script&gt;'))
+ const unavailable=renderToStaticMarkup(createElement(DevelopmentContent,{data:{...data,vercel:{...data.vercel,currentAvailable:false,current:null,latestAvailable:false,latest:null}}}))
+ assert.ok(unavailable.includes('운영 배포를 불러오지 못했어요'));assert.ok(!unavailable.includes('배포 실패'));assert.ok(unavailable.includes('최근 커밋'))
+})

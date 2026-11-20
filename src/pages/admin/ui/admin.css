@@ -156,3 +156,38 @@
 
 @media(max-width:640px) { .metrics-chart svg text { font-size:18px; } }
 .admin-dashboard-links { margin:24px 0 32px; }
+
+.development-panel { padding:24px; margin-top:24px; background:#fff; border:1px solid var(--line); border-radius:12px; min-width:0; }
+.deployment-status { display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:20px; background:#f1eef7; color:#746c86; font-size:12px; font-weight:700; white-space:nowrap; }
+.deployment-status i { width:6px; height:6px; border-radius:50%; background:currentColor; }
+.deployment-ready { background:#e7f7ef; color:#067d52; }
+.deployment-error,.deployment-blocked { background:#fff0ee; color:#b7392d; }
+.deployment-building,.deployment-initializing,.deployment-queued { background:#f0ebff; color:#6946ce; }
+.development-commit { font-size:19px; font-weight:700; margin:24px 0 12px; line-height:1.6; overflow-wrap:anywhere; }
+.development-commit a { color:var(--ink); text-decoration:none; }
+.development-commit a:hover,.development-commits a:hover strong { color:var(--primary); }
+.development-meta { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:12px; color:var(--muted); margin:14px 0; line-height:1.8; }
+.development-sync { font-size:13px; color:#91651b; margin:18px 0; }
+.development-sync.synced { color:#067d52; }
+.development-links { display:flex; flex-wrap:wrap; gap:20px; margin-top:22px; }
+.development-links a,.development-attempt > a { display:inline-flex; align-items:center; gap:6px; color:var(--primary); font-size:13px; text-decoration:none; min-height:32px; }
+.development-branch { color:var(--muted); background:var(--bg); padding:4px 8px; margin-left:6px; border-radius:6px; font-size:12px; font-weight:500; }
+.development-commits { list-style:none; margin:0; padding:0; }
+.development-commits li + li { border-top:1px solid var(--line); }
+.development-commits a { display:flex; align-items:center; gap:16px; padding:18px 0; text-decoration:none; color:var(--ink); }
+.development-commits a > div { flex:1; display:grid; gap:8px; min-width:0; }
+.development-commits strong { font-size:14px; font-weight:600; line-height:1.6; overflow-wrap:anywhere; }
+.development-commits span,.development-commits code { font-size:12px; color:var(--muted); }
+.development-commits .icon { width:16px; height:16px; flex-shrink:0; color:var(--muted); }
+.development-attempt { padding:18px; border:1px solid var(--line); background:var(--bg); border-radius:10px; margin-top:24px; }
+.development-attempt > div { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; font-size:13px; }
+.development-attempt p { overflow-wrap:anywhere; font-size:14px; line-height:1.6; }
+.development-attempt small { display:block; color:var(--muted); font-size:12px; margin-bottom:8px; }
+@media(max-width:640px) {
+ .development-panel { padding:18px 14px; }
+ .development-commit { font-size:16px; }
+ .development-commits a { flex-wrap:wrap; gap:8px; }
+ .development-commits a > div { flex-basis:100%; }
+ .development-commits span { line-height:1.6; }
+ .development-commits code { flex:1; }
+}

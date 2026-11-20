@@ -55,3 +55,9 @@ test('admin hub, analytics and member list have separate routes while member det
  assert.equal(pathForScreen('admin-members',null,null,null,null,id),`/admin/members/${id}`)
  assert.equal(parseAppPath('/admin/analytics/extra').screen,'not-found')
 })
+
+test('development tab supports direct URLs and rejects appended paths',()=>{
+ assert.equal(parseAppPath('/admin/development').screen,'admin-development')
+ assert.equal(pathForScreen('admin-development',null),'/admin/development')
+ assert.equal(parseAppPath('/admin/development/extra').screen,'not-found')
+})

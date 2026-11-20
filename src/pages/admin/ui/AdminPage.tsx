@@ -3,15 +3,17 @@ import { Icon } from '../../../shared/ui'
 import type { IconName } from '../../../shared/ui'
 import { DashboardWidgets } from './DashboardWidgets'
 import { AdminAnalyticsPage } from './AdminAnalyticsPage'
+import { AdminDevelopmentPage } from './AdminDevelopmentPage'
 import { AdminMembersPage } from './AdminMembersPage'
 import { SupportPage } from '../../support/ui/SupportPage'
 import './admin.css'
 
-export type AdminSection = 'dashboard' | 'analytics' | 'members' | 'support'
-const menus: { section: AdminSection; title: string; description: string; icon: IconName; href: string }[] = [
-  { section: 'analytics', title: '방문 통계', description: '방문자, 인기 페이지와 신규 가입 추이를 확인하세요.', icon: 'chart', href: '/admin/analytics' },
-  { section: 'members', title: '회원 관리', description: '회원 정보와 스크립트, 학습 현황을 관리하세요.', icon: 'users', href: '/admin/members' },
-  { section: 'support', title: '문의함', description: '회원의 문의를 확인하고 답변하세요.', icon: 'message', href: '/admin/support' },
+export type AdminSection = 'dashboard' | 'analytics' | 'members' | 'support' | 'development'
+const menus: { section: AdminSection; title: string; icon: IconName; href: string }[] = [
+  { section: 'analytics', title: '방문 통계', icon: 'chart', href: '/admin/analytics' },
+  { section: 'members', title: '회원 관리', icon: 'users', href: '/admin/members' },
+  { section: 'development', title: '개발·배포', icon: 'settings', href: '/admin/development' },
+  { section: 'support', title: '문의함', icon: 'message', href: '/admin/support' },
 ]
 export function AdminPage({ section = 'dashboard', memberId, onSelectMember, onNavigate }: { section?: AdminSection; memberId: string | null; onSelectMember: (id: string | null) => void; onNavigate: (section: AdminSection) => void }) {
   const follow = (event: MouseEvent<HTMLAnchorElement>, next: AdminSection) => {
@@ -23,6 +25,6 @@ export function AdminPage({ section = 'dashboard', memberId, onSelectMember, onN
     {section === 'dashboard' ? <section className="admin-page admin-dashboard"><header className="page-top"><div><p className="eyebrow">Molip Study</p><h1>관리자 대시보드</h1><p className="page-description">회원과 서비스의 최근 현황을 확인하세요.</p></div></header>
       <nav className="admin-service-links admin-dashboard-links" aria-label="외부 서비스 관리 도구">{[['Supabase', 'https://supabase.com/dashboard/project/fdmcqpomrywuobbrmnyl'], ['GitHub', 'https://github.com/molipstudy/Molip-Script'], ['Vercel', 'https://vercel.com/z1hxn/molip-script']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer">{label}<Icon name="arrow" /></a>)}</nav>
       <DashboardWidgets />
-    </section> : section === 'analytics' ? <AdminAnalyticsPage /> : section === 'members' ? <AdminMembersPage memberId={memberId} onSelectMember={onSelectMember} /> : <SupportPage admin />}
+    </section> : section === 'analytics' ? <AdminAnalyticsPage /> : section === 'members' ? <AdminMembersPage memberId={memberId} onSelectMember={onSelectMember} /> : section === 'development' ? <AdminDevelopmentPage /> : <SupportPage admin />}
   </div>
 }

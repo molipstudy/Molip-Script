@@ -7,7 +7,7 @@ import { AsyncButton, Icon } from '../../../shared/ui'
 import { ProjectCredit } from '../../project-credit'
 import { InstallAppButton } from '../../../features/install-app'
 
-type MainScreen = 'admin-analytics' | 'admin-members' | 'support' | 'admin-support' | 'admin' | 'continue' | 'about' | 'auth' | 'home' | 'library' | 'community' | 'profile'
+type MainScreen = 'admin-development' | 'admin-analytics' | 'admin-members' | 'support' | 'admin-support' | 'admin' | 'continue' | 'about' | 'auth' | 'home' | 'library' | 'community' | 'profile'
 
 type AppShellProps = {
   isAdmin?: boolean

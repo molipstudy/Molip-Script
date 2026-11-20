@@ -9,6 +9,7 @@ export const parseAppPath = (pathname: string): RouteTarget => {
   if (parts.some(part => part.includes('/') || part.includes('\\') || Array.from(part).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))) return missing
   const [scriptId = '', mode = '', id = ''] = parts
   if (!parts.length) return { scriptId: null, screen: 'home' }
+  if (scriptId === 'admin' && mode === 'development' && parts.length === 2) return { scriptId: null, screen: 'admin-development' }
   if (scriptId === 'admin' && mode === 'analytics' && parts.length === 2) return { scriptId: null, screen: 'admin-analytics' }
   if (scriptId === 'admin' && mode === 'members' && parts.length === 2) return { scriptId: null, screen: 'admin-members' }
   if (scriptId === 'admin' && mode === 'support' && parts.length === 2) return { scriptId: null, screen: 'admin-support' }
@@ -35,6 +36,7 @@ export const pathForScreen = (
   adminMemberId?: string | null,
 ) => {
   if (screen === 'support') return '/support'
+  if (screen === 'admin-development') return '/admin/development'
   if (screen === 'admin-analytics') return '/admin/analytics'
   if (screen === 'admin-members') return adminMemberId ? `/admin/members/${encodeURIComponent(adminMemberId)}` : '/admin/members'
   if (screen === 'admin-support') return '/admin/support'

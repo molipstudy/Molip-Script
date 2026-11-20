@@ -33,3 +33,9 @@ test('local analytics passes range and session to the real handler with server-o
  assert.equal(requests,4);assert.equal(res.statusCode,200);assert.equal(res.body.visitors,12)
  assert.ok(!JSON.stringify(res.body).includes('private-server-token'))
 })
+
+test('local development status API uses the same administrator auth boundary',async()=>{
+ const res=response()
+ await middleware()({url:'/api/admin-development',method:'GET',headers:{}},res,()=>assert.fail('development API must not fall through to HTML'))
+ assert.equal(res.statusCode,401);assert.equal(res.headers['Content-Type'],'application/json; charset=utf-8')
+})

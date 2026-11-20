@@ -331,7 +331,7 @@ export function useAppController() {
     if (user) returnTarget.current = null
     hasAppliedInitialRoute.current = true
     skipRouteSync.current = true
-    if (['not-found', 'forbidden', 'admin', 'admin-analytics', 'admin-members', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+    if (['not-found', 'forbidden', 'admin', 'admin-development', 'admin-analytics', 'admin-members', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
@@ -365,7 +365,7 @@ export function useAppController() {
   useEffect(() => {
     const handlePopState = () => {
       const target = parseAppPath(window.location.pathname)
-      if (['not-found', 'forbidden', 'admin', 'admin-analytics', 'admin-members', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
+      if (['not-found', 'forbidden', 'admin', 'admin-development', 'admin-analytics', 'admin-members', 'admin-support', 'support', 'profile', 'home', 'about', 'auth', 'library', 'editor', 'continue'].includes(target.screen)) {
       if (!user && ['library', 'editor', 'continue'].includes(target.screen)) { returnTarget.current = { screen: target.screen, scriptId: target.scriptId }; setLoginRequired(true); return }
       setAdminMemberId(target.adminMemberId ?? null)
       setScreen(user && target.screen === 'auth' ? 'profile' : target.screen); return
@@ -1692,8 +1692,8 @@ export function useAppController() {
     })
   }
 
-  const navigateMain = async (nextScreen: 'admin-analytics' | 'admin-members' | 'support' | 'admin-support' | 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
-    if (!user && (nextScreen === 'support' || nextScreen === 'admin-support' || nextScreen === 'admin-analytics' || nextScreen === 'admin-members' || nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin(nextScreen === 'support' || nextScreen === 'admin-support' ? nextScreen : 'library'); return }
+  const navigateMain = async (nextScreen: 'admin-development' | 'admin-analytics' | 'admin-members' | 'support' | 'admin-support' | 'admin' | 'home' | 'about' | 'auth' | 'library' | 'community' | 'profile' | 'continue') => {
+    if (!user && (nextScreen === 'support' || nextScreen === 'admin-support' || nextScreen === 'admin-development' || nextScreen === 'admin-analytics' || nextScreen === 'admin-members' || nextScreen === 'admin' || nextScreen === 'library' || nextScreen === 'continue')) { requestLogin(nextScreen === 'support' || nextScreen === 'admin-support' ? nextScreen : 'library'); return }
     if (screen === 'dictation' && !isDictationDone) await saveCurrentDictationProgress()
     if ((screen === 'flashcard' || screen === 'masking') && flashQueue.length && flashIndex < flashQueue.length) {
       await saveActiveFlashcard(flashcardState())

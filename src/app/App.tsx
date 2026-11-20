@@ -264,11 +264,11 @@ function App() {
   const errorPage = (code: 403 | 404 | 503, retry?: () => void) => shell(<ErrorPage code={code} onHome={() => void navigateMain('home')} onLogin={code === 403 && !user ? () => { setAuthMode('login'); setScreen('auth') } : undefined} onRetry={retry} />)
   if (screen === 'not-found') return errorPage(404)
   if (screen === 'forbidden') return errorPage(403)
-  if (screen === 'admin' || screen === 'admin-support' || screen === 'admin-analytics' || screen === 'admin-members') {
+  if (screen === 'admin-development' || screen === 'admin' || screen === 'admin-support' || screen === 'admin-analytics' || screen === 'admin-members') {
     if (admin.pending) return shell(<LoadingSkeleton view={adminMemberId ? 'admin-member' : screen} />)
     if (admin.error) return errorPage(503, admin.refresh)
     if (!user || !admin.isAdmin) return errorPage(403)
-    return shell(<AdminPage section={screen === 'admin-analytics' ? 'analytics' : screen === 'admin-members' ? 'members' : screen === 'admin-support' ? 'support' : 'dashboard'} onNavigate={section => void navigateMain(section === 'dashboard' ? 'admin' : section === 'analytics' ? 'admin-analytics' : section === 'members' ? 'admin-members' : 'admin-support')} key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
+    return shell(<AdminPage section={screen === 'admin-development' ? 'development' : screen === 'admin-analytics' ? 'analytics' : screen === 'admin-members' ? 'members' : screen === 'admin-support' ? 'support' : 'dashboard'} onNavigate={section => void navigateMain(section === 'development' ? 'admin-development' : section === 'dashboard' ? 'admin' : section === 'analytics' ? 'admin-analytics' : section === 'members' ? 'admin-members' : 'admin-support')} key={user.id} memberId={adminMemberId} onSelectMember={setAdminMemberId} />)
   }
 
   if (screen === 'support') return shell(user ? <SupportPage key={user.id} /> : <section className="result-card"><h1>문의하기</h1><p>로그인하면 문의를 보내고 답변을 확인할 수 있어요.</p><button className="primary-btn" onClick={() => requestLogin('support')}>로그인하기</button></section>)
